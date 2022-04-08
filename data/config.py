@@ -119,6 +119,7 @@ scannet_dataset = dataset_base.copy({
     # edge information
     'train_edge' : '../scannet/edge/',
     'val_edge' : '../scannet/edge/',
+    'eval_edge' : '../scannet/edge/',
 
     # Validation images and annotations.
     'valid_images': '../scannet/used_filter_scans/',

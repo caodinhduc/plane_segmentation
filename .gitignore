@@ -2,5 +2,4 @@ weights/
 *.json
 logs/
 .vscode/
-images/
 __pycache__/

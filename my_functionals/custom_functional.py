@@ -39,7 +39,7 @@ def gradient_central_diff(input, cuda):
             kernel_t = kernel_t.cuda(device=cuda)
     else:
         if cuda is True:
-            kernel_t = kernel_t.cuda()
+            kernel_t = kernel_t.cuda(0)
     n, c, h, w = input.shape
 
     x = conv2d_same(input, kernel_t.unsqueeze(0).unsqueeze(0).repeat([c, 1, 1, 1]), c)
@@ -93,7 +93,7 @@ def convTri(input, r, cuda=False):
             kernel = kernel.cuda(device=cuda)
     else:
         if cuda is True:
-            kernel = kernel.cuda()
+            kernel = kernel.cuda(0)
 
     # padding w
     input_ = F.pad(input, (1, 1, 0, 0), mode='replicate')

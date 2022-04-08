@@ -79,7 +79,7 @@ class GSCNN(nn.Module):
         # canny = np.zeros((x_size[0], 1, x_size[2], x_size[3]))
         # for i in range(x_size[0]):
         #     canny[i] = cv2.Canny(im_arr[i],10,100)
-        # canny = torch.from_numpy(canny).cuda().float()
+        # canny = torch.from_numpy(canny).cuda(0).float()
 
         cs = self.res1(m1f)
         cs = F.interpolate(cs, x_size,
