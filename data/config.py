@@ -113,15 +113,19 @@ scannet_dataset = dataset_base.copy({
     'name': 'ScanNetDataset',
 
     # Training images and annotations
-    'train_images': '../scannet/filter_scans/',
+    'train_images': '../scannet/used_filter_scans/',
     'train_info':   'scannet_train.json',
 
+    # edge information
+    'train_edge' : '../scannet/edge/',
+    'val_edge' : '../scannet/edge/',
+
     # Validation images and annotations.
-    'valid_images': '../scannet/filter_scans/',
+    'valid_images': '../scannet/used_filter_scans/',
     'valid_info':   'scannet_val.json',
 
     # Evaluation images and annotations.
-    'eval_images': '../scannet/filter_scans/',
+    'eval_images': '../scannet/used_filter_scans/',
     'eval_info':   'scannet_eval.json',
 
     # A list of names for each of you classes.
@@ -416,7 +420,7 @@ PlaneRecNet_base_config = Config(
         'augment': data_augment,
         
         # Training Settings
-        'max_iter': 125000,
+        'max_iter': 250000,
         'lr_steps': (62500, 100000),
         # dw' = momentum * dw - lr * (grad + decay * w)
         'lr': 1e-4,

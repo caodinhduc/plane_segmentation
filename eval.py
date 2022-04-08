@@ -58,7 +58,6 @@ def parse_args(argv=None):
     global args
     args = parser.parse_args(argv)
 
-depth_metrics = ["abs_rel", "sq_rel", "rmse", "log10", "a1", "a2", "a3", "ratio"]
 iou_thresholds = [x / 100 for x in range(50, 100, 5)]
 
 def evaluate(net: PlaneRecNet, dataset, during_training=False, eval_nums=-1):
@@ -83,7 +82,7 @@ def evaluate(net: PlaneRecNet, dataset, during_training=False, eval_nums=-1):
         for it, image_idx in enumerate(dataset_indices):
             timer.reset()
 
-            image, gt_instances, gt_depth = dataset.pull_item(image_idx)
+            image, gt_instances, gt_depth, gt_edges = dataset.pull_item(image_idx)
             batch = Variable(image.unsqueeze(0)).cuda()
 
             batched_result = net(batch) # if batch_size = 1, result = batched_result[0]
@@ -91,11 +90,7 @@ def evaluate(net: PlaneRecNet, dataset, during_training=False, eval_nums=-1):
 
             # TODO: this dict looping is not a good practice, python < 3.6 doesn't keep keys/values in same order as declared.
             gt_masks, gt_boxes, gt_classes, gt_planes, k_matrices = [v.cuda() for k, v in gt_instances.items()]
-            pred_masks, pred_boxes, pred_classes, pred_scores, pred_depth = [v for k, v in result.items()]
-
-            gt_depth = gt_depth.cuda()
-            depth_error_per_frame = compute_depth_metrics(pred_depth, gt_depth, median_scaling=True)
-            infos.append(depth_error_per_frame)
+            pred_masks, pred_boxes, pred_classes, pred_scores, pred_edges = [v for k, v in result.items()]
 
             if pred_masks is not None:
                 pred_masks = pred_masks.float()
@@ -117,15 +112,15 @@ def evaluate(net: PlaneRecNet, dataset, during_training=False, eval_nums=-1):
                 print('\rProcessing Images  %s %6d / %6d (%5.2f%%)    %5.2f fps        '
                       % (repr(progress_bar), it+1, eval_nums, progress, fps), end='')
         calc_map(ap_data)
-        infos = np.asarray(infos, dtype=np.double)
-        infos = infos.sum(axis=0)/infos.shape[0]
-        print()
-        print("Depth Metrics:")
-        print("{}: {:.5f}, {}: {:.5f}, {}: {:.5f}, {}: {:.5f}, {}: {:.5f}, {}: {:.5f}, {}: {:.5f} \n{}: {:.5f}".format(
-            depth_metrics[0], infos[0], depth_metrics[1], infos[1], depth_metrics[2], infos[2],
-            depth_metrics[3], infos[3], depth_metrics[4], infos[4], depth_metrics[5], infos[5],
-            depth_metrics[6], infos[6], depth_metrics[7], infos[7]
-        ))
+        # infos = np.asarray(infos, dtype=np.double)
+        # infos = infos.sum(axis=0)/infos.shape[0]
+        # print()
+        # print("Depth Metrics:")
+        # print("{}: {:.5f}, {}: {:.5f}, {}: {:.5f}, {}: {:.5f}, {}: {:.5f}, {}: {:.5f}, {}: {:.5f} \n{}: {:.5f}".format(
+        #     depth_metrics[0], infos[0], depth_metrics[1], infos[1], depth_metrics[2], infos[2],
+        #     depth_metrics[3], infos[3], depth_metrics[4], infos[4], depth_metrics[5], infos[5],
+        #     depth_metrics[6], infos[6], depth_metrics[7], infos[7]
+        # ))
 
     except KeyboardInterrupt:
         print('Stopping...')
@@ -138,74 +133,21 @@ def tensorborad_visual_log(net: PlaneRecNet, dataset, writer: SummaryWriter, ite
     try:
         # Main eval loop
         for it, image_idx in enumerate(dataset_indices):
-            image, _, _ = dataset.pull_item(image_idx)
+            image, _, _, _ = dataset.pull_item(image_idx)
             frame_ori = dataset.pull_image(image_idx)
             frame_tensor = torch.from_numpy(frame_ori).cuda().float()
             batch = Variable(image.unsqueeze(0)).cuda()
 
             batched_result = net(batch) # if batch_size = 1, result = batched_result[0]
-            seg_on_frame_numpy, pred_depth = display_on_frame(batched_result[0], frame_tensor, mask_alpha=0.35)
+            seg_on_frame_numpy, pred_edge = display_on_frame(batched_result[0], frame_tensor, mask_alpha=0.35)
 
-            pred_depth = pred_depth[20:460,20:620]
-            vmin = np.percentile(pred_depth, 1)
-            vmax = np.percentile(pred_depth, 99)
-            pred_depth = pred_depth.clip(min=vmin, max=vmax)
-            pred_depth = ((pred_depth - pred_depth.min()) / (pred_depth.max() - pred_depth.min()) * 255).astype(np.uint8)
-            pred_depth_color = cv2.applyColorMap(pred_depth, cv2.COLORMAP_VIRIDIS)
-
-            pred_depth_color = cv2.cvtColor(pred_depth_color, cv2.COLOR_BGR2RGB)
             seg_on_frame_numpy = cv2.cvtColor(seg_on_frame_numpy, cv2.COLOR_BGR2RGB)
-            writer.add_image("depth/pred/{}".format(it), pred_depth_color, iteration, dataformats='HWC')
             writer.add_image("seg/pred/{}".format(it), seg_on_frame_numpy, iteration, dataformats='HWC')
+            writer.add_image("edge/pred/{}".format(it), 1.0 - pred_edge, iteration, dataformats='HW')
 
     except KeyboardInterrupt:
         print('Stopping...')
 
-
-def compute_depth_metrics(pred_depth, gt_depth, median_scaling=True):
-    """
-    Computation of error metrics between predicted and ground truth depths.
-    Prediction and ground turth need to be converted to the same unit e.g. [meter].
-
-    Arguments: pred_depth, gt_depth: Tensor [1, H, W], dense depth map
-               median_scaling: If True, use median value to scale pred_depth
-    Returns: abs_rel, sq_rel, rmse, rmse_log, a1, a2, a3: depth metrics
-             ratio: median ration between pred_depth and gt_depth, if not median_scaling, ratio = 0
-    """
-    _, H, W = gt_depth.shape
-    pred_depth_flat = pred_depth.squeeze().view(-1, H*W)
-    gt_depth_flat = gt_depth.squeeze().view(-1, H*W)
-    valid_mask = (gt_depth_flat > 0.5).logical_and(pred_depth_flat > 0.5)
-    pred_depths_flat = pred_depth_flat[valid_mask]
-    gt_depths_flat = gt_depth_flat[valid_mask]
-
-    if median_scaling:
-        # just to calculate the ratio, we don'r really use median scaling to align pred and gt.
-        ratio = torch.median(gt_depth) / torch.median(pred_depths_flat)
-        #pred_depths_flat *= ratio
-    else:
-        ratio = 0
-
-    pred_depths_flat[pred_depths_flat < cfg.dataset.min_depth] = cfg.dataset.min_depth
-    pred_depths_flat[pred_depths_flat > cfg.dataset.max_depth] = cfg.dataset.max_depth
-
-    thresh = torch.max((gt_depths_flat / pred_depths_flat), (pred_depths_flat / gt_depths_flat))
-    a1 = (thresh < 1.25     ).type(torch.cuda.DoubleTensor).mean()
-    a2 = (thresh < 1.25 ** 2).type(torch.cuda.DoubleTensor).mean()
-    a3 = (thresh < 1.25 ** 3).type(torch.cuda.DoubleTensor).mean()
-
-    rmse = (gt_depths_flat - pred_depths_flat) ** 2
-    rmse = torch.sqrt(rmse.mean())
-
-    #rmse_log = (torch.log(gt_depths_flat) - torch.log(pred_depths_flat)) ** 2
-    #rmse_log = torch.sqrt(rmse_log.mean())
-
-    log10 = torch.mean(torch.abs(torch.log10(gt_depths_flat) - torch.log10(pred_depths_flat)))
-
-    abs_rel = torch.mean(torch.abs(gt_depths_flat - pred_depths_flat) / gt_depths_flat)
-    sq_rel = torch.mean(((gt_depths_flat - pred_depths_flat) ** 2) / gt_depths_flat)
-
-    return abs_rel.cpu(), sq_rel.cpu(), rmse.cpu(), log10.cpu(), a1.cpu(), a2.cpu(), a3.cpu(), ratio.cpu()
 
 
 def compute_segmentation_metrics(ap_data, gt_masks, gt_boxes, gt_classes, pred_masks, pred_boxes, pred_classes, pred_scores):

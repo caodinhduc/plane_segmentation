@@ -39,7 +39,7 @@ def parse_args(argv=None):
     # Inference Parameters
     parser.add_argument('--top_k', default=100, type=int, help='Further restrict the number of predictions to parse')
     parser.add_argument("--nms_mode", default="matrix", type=str, choices=["matrix", "mask"], help='Choose NMS type from matrix and mask nms.')
-    parser.add_argument('--score_threshold', default=0.15, type=float, help='Detections with a score under this threshold will not be considered.')
+    parser.add_argument('--score_threshold', default=0.25, type=float, help='Detections with a score under this threshold will not be considered.')
     parser.add_argument("--depth_mode", default="colored", type=str, choices=["colored", "gray"], help='Choose visualization mode of depth map')
     parser.add_argument('--depth_shift', default=512, type=float, help='Depth shift')
     global args
@@ -52,10 +52,10 @@ def display_on_frame(result, frame, mask_alpha=0.5, fps_str='', no_mask=False, n
     h, w, _ = frame.shape
 
     pred_scores = result["pred_scores"]
-    pred_depth = result["pred_depth"].squeeze()
+    pred_edges = result['pred_edges'].squeeze()
     
     if pred_scores is None or pred_scores.shape[0] == 0:
-        return frame.byte().cpu().numpy(), pred_depth.cpu().numpy()
+        return frame.byte().cpu().numpy(), pred_edges.cpu().numpy()
     
     pred_masks = result["pred_masks"].unsqueeze(-1)
     pred_boxes = result["pred_boxes"]
@@ -138,12 +138,12 @@ def display_on_frame(result, frame, mask_alpha=0.5, fps_str='', no_mask=False, n
             cv2.putText(frame_numpy, text_str, text_pt, font_face,
                         font_scale, text_color, font_thickness, cv2.LINE_AA)
                 
-        return frame_numpy, pred_depth.cpu().numpy()
+        return frame_numpy, pred_edges.cpu().numpy()
     else:
-        return frame.byte().cpu().numpy(), pred_depth.cpu().numpy()
+        return frame.byte().cpu().numpy(), pred_edges.cpu().numpy()
 
 
-def inference_image(net: PlaneRecNet, path: str, save_path: str = None, depth_mode: str='colored'):
+def inference_image(net: PlaneRecNet, path: str, save_path: str = None):
     frame_np = cv2.imread(path)
     H, W, _ = frame_np.shape
 
@@ -156,28 +156,19 @@ def inference_image(net: PlaneRecNet, path: str, save_path: str = None, depth_mo
     batch = FastBaseTransform()(frame.unsqueeze(0))
     results = net(batch)
 
-    blended_frame, depth = display_on_frame(results[0], frame, no_mask=args.no_mask, no_box=args.no_box, no_text=args.no_text)
+    blended_frame, edge = display_on_frame(results[0], frame, no_mask=args.no_mask, no_box=args.no_box, no_text=args.no_text)
 
     if save_path is None:
         name, ext = os.path.splitext(path)
         save_path = name + '_seg' + ext
-        depth_path = name + '_dep.png'
+        edge_path = name + '_edge.png'
     else:
         name, ext = os.path.splitext(save_path)
-        depth_path = name + '_dep.png'
+        edge_path = name + '_edge.png'
         
     cv2.imwrite(save_path, blended_frame)
-
-    if depth_mode == 'colored':
-        vmin = np.percentile(depth, 1)
-        vmax = np.percentile(depth, 99)
-        depth = depth.clip(min=vmin, max=vmax)
-        depth = ((depth - depth.min()) / (depth.max() - depth.min()) * 255).astype(np.uint8)
-        depth_color = cv2.applyColorMap(depth, cv2.COLORMAP_VIRIDIS)
-        cv2.imwrite(depth_path, depth_color)
-    elif depth_mode == 'gray':
-        depth = (depth*args.depth_shift).astype(np.uint16)
-        cv2.imwrite(depth_path, depth)
+    from torchvision.utils import save_image
+    save_image(edge.data, edge_path)
     
    
 def inference_images(net: PlaneRecNet, in_folder: str, out_folder: str, max_img: int=0, depth_mode: str='colored'):
@@ -193,7 +184,7 @@ def inference_images(net: PlaneRecNet, in_folder: str, out_folder: str, max_img:
         if ext != ".png" and ext != ".jpg":
             continue
         out_path = os.path.join(out_folder, name+ext)
-        inference_image(net, img_path, out_path, depth_mode=depth_mode)
+        inference_image(net, img_path, out_path)
         print("Inference images: " + os.path.basename(img_path) + ' -> ' + os.path.basename(out_path),  end='\r')
         index = index + 1
         if index >= max_img:

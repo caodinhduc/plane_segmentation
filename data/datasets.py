@@ -46,8 +46,8 @@ class PlaneAnnoDataset(data.Dataset):
         Returns:
             tuple: Tuple (image, instances, depth).
         '''
-        image, instances, depth = self.pull_item(index)
-        return image, instances, depth
+        image, instances, depth, edges = self.pull_item(index)
+        return image, instances, depth, edges
 
     def pull_item(self, index):
         '''
@@ -75,6 +75,11 @@ class PlaneAnnoDataset(data.Dataset):
         depth_path = self.get_depth_path(file_name)
         depth = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED).astype(np.float32)
 
+        # read edge mask
+        edge_path = os.path.join('../scannet/edge/', '_'.join(file_name.split('/'))).replace('jpg', 'png')
+        assert osp.exists(edge_path), 'Image path does not exist: {}'.format(edge_path)
+        edge = cv2.imread(edge_path, cv2.IMREAD_GRAYSCALE).astype(np.float32)/255
+        edge = 1.0 - cv2.resize(edge,(640,480))
 
         if self.has_pos:
             k_matrix = self.get_camera_matrix(file_name)
@@ -102,9 +107,9 @@ class PlaneAnnoDataset(data.Dataset):
 
         if self.transform is not None:
             if len(target) > 0:
-                img, depth, masks, boxes, labels, plane_paras = self.transform(img, depth, masks, boxes, labels, plane_paras)
+                img, depth, edge, masks, boxes, labels, plane_paras = self.transform(img, depth, edge, masks, boxes, labels, plane_paras)
             else:
-                img, depth, _, _, _ = self.transform(img, depth, np.zeros((1, height, width), dtype=np.float), np.array([[0, 0, 1, 1]]))
+                img, depth, edge, _, _, _ = self.transform(img, depth, edge, np.zeros((1, height, width), dtype=np.float), np.array([[0, 0, 1, 1]]))
                 masks = None
                 boxes = None
                 labels = None
@@ -116,7 +121,7 @@ class PlaneAnnoDataset(data.Dataset):
             print('Warning: Augmentation output an example with no ground truth. Resampling...')
             return self.pull_item(random.randint(0, len(self.ids)-1))
         
-        return torch.from_numpy(img).permute(2, 0, 1), instances, torch.from_numpy(depth).unsqueeze(dim=0) * cfg.dataset.depth_resolution
+        return torch.from_numpy(img).permute(2, 0, 1), instances, torch.from_numpy(depth).unsqueeze(dim=0) * cfg.dataset.depth_resolution, torch.from_numpy(edge).unsqueeze(dim=0)
     
     def __len__(self):
         return len(self.ids)
@@ -270,23 +275,25 @@ def detection_collate(batch):
     """
     imgs = []
     depths = []
+    edges = []
     instances = []
 
     for sample in batch:
         imgs.append(sample[0])
         instances.append(sample[1])
         depths.append(sample[2])
+        edges.append(sample[3])
 
-    return imgs, instances, depths
+    return imgs, instances, depths, edges
 
 
-def enforce_size(img, depth, instances, new_w, new_h):
+def enforce_size(img, depth, edge, instances, new_w, new_h):
     """ Ensures that the image is the given size without distorting aspect ratio. """
     with torch.no_grad():
         _, h, w = img.size()
 
         if h == new_h and w == new_w:
-            return img, depth, instances
+            return img, depth, edge, instances
         
         # Resize the image so that it fits within new_w, new_h
         w_prime = new_w
@@ -306,6 +313,9 @@ def enforce_size(img, depth, instances, new_w, new_h):
         depth = F.interpolate(depth.unsqueeze(0), (h_prime, w_prime), mode='bilinear', align_corners=False)
         depth.squeeze_(0)
 
+        edge = F.interpolate(edge.unsqueeze(0), (h_prime, w_prime), mode='bilinear', align_corners=False)
+        edge.squeeze_(0)
+
         # Act like each object is a color channel
         instances['masks'] = F.interpolate(instances['masks'].unsqueeze(0), (h_prime, w_prime), mode='bilinear', align_corners=False)
         instances['masks'].squeeze_(0)
@@ -318,9 +328,10 @@ def enforce_size(img, depth, instances, new_w, new_h):
         pad_dims = (0, new_w - w_prime, 0, new_h - h_prime)
         img   = F.pad(  img, pad_dims, mode='constant', value=0)
         depth = F.pad(depth, pad_dims, mode='constant', value=0)
+        edge = F.pad(edge, pad_dims, mode='constant', value=0)
         instances['masks'] = F.pad(instances['masks'], pad_dims, mode='constant', value=0)
 
-        return img, depth, instances
+        return img, depth, edge, instances
 
 
 # Just for testing

@@ -14,6 +14,7 @@ from models.functions.funcs import bias_init_with_prob
 from models.fpn import FPN
 from models.backbone import construct_backbone
 from data.augmentations import FastBaseTransform
+from edge_stream import GSCNN
 
 torch.cuda.current_device()
 
@@ -23,7 +24,7 @@ class PlaneRecNet(nn.Module):
 
         # get the device of the model
         self.device = torch.device(cfg.device)
-        self.depth_decoder_indices = cfg.depth.selected_layers
+        self.depth_decoder_indices = cfg.depth.selected_layers # use for shape detection
         self.fpn_indices = cfg.fpn.selected_layers
 
         # Instance parameters.
@@ -59,9 +60,6 @@ class PlaneRecNet(nn.Module):
         src_channels = self.backbone.channels
         self.fpn = FPN([src_channels[i] for i in self.fpn_indices], start_level=cfg.fpn.start_level)
 
-        # build depth decoder
-        self.depth_decoder = DepthDecoder_FPN()
-
         # build the ins head.
         instance_shapes = [cfg.fpn.num_features for _ in range(len(cfg.solov2.instance_in_features))]
         self.inst_head = SOLOv2InsHead(cfg, instance_shapes)
@@ -69,6 +67,9 @@ class PlaneRecNet(nn.Module):
         # build the mask head.
         mask_shapes = [cfg.fpn.num_features for _ in range(len(cfg.solov2.masks_in_features))]
         self.mask_head = SOLOv2MaskHead(cfg, mask_shapes)
+
+        # GSCNN
+        self.gscnn = GSCNN()
     
     def forward(self, x):
 
@@ -76,11 +77,13 @@ class PlaneRecNet(nn.Module):
         with timer.env("backbone"):
             features_encoder = self.backbone(x)
             #for i in features: print(i.shape)
-        
+
+        # apply edge detection there
+        with timer.env("edge"):
+            edge = self.gscnn(features_encoder)
         # Feature Pyramid Network
         with timer.env("fpn"):
             features = self.fpn([features_encoder[i] for i in self.fpn_indices])
-            # Fuse feature to 256 x 160 x 160
         
         # Instance Branch
         with timer.env("instance head"):
@@ -92,26 +95,21 @@ class PlaneRecNet(nn.Module):
         with timer.env('mask head'):
             mask_features = [features[f] for f in range(len(self.mask_in_features))]
             mask_pred = self.mask_head(mask_features)
-        
-                # Depth Decoding
-        with timer.env("depth_decoder"):
-            depth_pred = self.depth_decoder([features_encoder[i] for i in self.depth_decoder_indices], mask_pred, kernel_pred)
 
         # Inference or output for trainng
         with timer.env('Inferencing'):
             if self.training:
                 #mask_feat_size = mask_pred.size()[-2:]
-            
-                return mask_pred, cate_pred, kernel_pred, depth_pred
+                return mask_pred, cate_pred, kernel_pred, edge
             else:
                 # point nms.
                 cate_pred = [point_nms(cate_p.sigmoid(), kernel=2).permute(0, 2, 3, 1)
                             for cate_p in cate_pred]
                 # do inference for results.
-                results = self.inference(mask_pred, cate_pred, kernel_pred, depth_pred, x)
+                results = self.inference(mask_pred, cate_pred, kernel_pred, edge, x)
 
                 return results
-
+    
     @staticmethod
     def split_feats(feats):
         return (F.interpolate(feats[0], scale_factor=0.5, mode='bilinear', align_corners=False, recompute_scale_factor=False),
@@ -154,7 +152,7 @@ class PlaneRecNet(nn.Module):
                 module.weight.requires_grad = enable
                 module.bias.requires_grad = enable
 
-    def inference(self, pred_masks, pred_cates, pred_kernels, pred_depths, batched_images):
+    def inference(self, pred_masks, pred_cates, pred_kernels, pred_edges, batched_images):
         assert len(pred_cates) == len(pred_kernels)
 
         results = []
@@ -174,19 +172,18 @@ class PlaneRecNet(nn.Module):
 
             pred_cate = torch.cat(pred_cate, dim=0)
             pred_kernel = torch.cat(pred_kernel, dim=0)
-            pred_depth = pred_depths[img_idx, ...].unsqueeze(0)
 
+
+            pred_edge = pred_edges[img_idx, ...].unsqueeze(0)
             # inference for single image.
-            result = self.inference_single_image(pred_mask, pred_cate, pred_kernel, pred_depth, ori_size)
+            result = self.inference_single_image(pred_mask, pred_cate, pred_kernel, pred_edge, ori_size)
             results.append(result)
         return results
 
-    def inference_single_image(self, seg_preds, cate_preds, kernel_preds, depth_pred, ori_size):
-        result = {'pred_masks': None, 'pred_boxes': None, 'pred_classes': None, 'pred_scores': None, 'pred_depth': None,}
+    def inference_single_image(self, seg_preds, cate_preds, kernel_preds, pred_edge, ori_size):
+        result = {'pred_masks': None, 'pred_boxes': None, 'pred_classes': None, 'pred_scores': None, 'pred_edges' : None,}
+        result['pred_edges'] = pred_edge.detach()
 
-        # depth interpolation
-        result['pred_depth'] = F.interpolate(depth_pred, size=ori_size, mode='bilinear', align_corners=False).detach()
-        
         # process.
         inds = (cate_preds > self.score_threshold)
         cate_scores = cate_preds[inds]
@@ -359,7 +356,6 @@ class SOLOv2InsHead(nn.Module):
         Arguments:
             features (list[Tensor]): FPN feature map tensors in high to low resolution.
                 Each tensor in the list correspond to different feature levels.
-
         Returns:
             pass
         """
@@ -471,7 +467,6 @@ class SOLOv2MaskHead(nn.Module):
         Arguments:
             features (list[Tensor]): FPN feature map tensors in high to low resolution.
                 Each tensor in the list correspond to different feature levels.
-
         Returns:
             mask_pred (Tensor [C x W x H]): Fused mask prediciton. 
         """
@@ -496,117 +491,6 @@ class SOLOv2MaskHead(nn.Module):
 
         mask_pred = self.conv_pred(feature_add_all_level)
         return mask_pred
-
-
-class DepthDecoder_FPN(nn.Module):
-
-    def __init__(self):
-        super(DepthDecoder_FPN, self).__init__()
-
-        self.num_output_channels = 1
-        self.num_kernels = cfg.solov2.num_kernels
-        self.channels_kernels_flatten = 0
-        for i in cfg.solov2.num_grids:
-            self.channels_kernels_flatten += i*i
-
-        self.latlayer1 = nn.Conv2d(2048, 256, kernel_size=1, stride=1, padding=0)
-        self.latlayer2 = nn.Conv2d(1024, 256, kernel_size=1, stride=1, padding=0)
-        self.latlayer3 = nn.Conv2d( 512, 256, kernel_size=1, stride=1, padding=0)
-        self.latlayer4 = nn.Conv2d( 256, 256, kernel_size=1, stride=1, padding=0)
-
-        self.conv1 = nn.Sequential(
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=0),
-            nn.BatchNorm2d(256, eps=0.001, momentum=0.01),
-            nn.ReLU(inplace=True)
-        )
-        self.conv2 = nn.Sequential(
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(256, 128, kernel_size=3, stride=1, padding=0),
-            nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
-            nn.ReLU(inplace=True)
-        )
-        self.conv3 = nn.Sequential(
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(256, 128, kernel_size=3, stride=1, padding=0),
-            nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
-            nn.ReLU(inplace=True)
-        )
-        self.conv4 = nn.Sequential(
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(256, 128, kernel_size=3, stride=1, padding=0),
-            nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
-            nn.ReLU(inplace=True)
-        )
-
-        self.deconv1 = nn.Sequential(
-            torch.nn.Upsample(scale_factor=2, mode='nearest', align_corners=None),
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=0),
-            nn.BatchNorm2d(256, eps=0.001, momentum=0.01),
-            nn.ReLU(inplace=True)
-        )
-        self.deconv2 = nn.Sequential(
-            torch.nn.Upsample(scale_factor=2, mode='nearest', align_corners=None),
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(256, 128, kernel_size=3, stride=1, padding=0),
-            nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
-            nn.ReLU(inplace=True)
-        )
-        self.deconv3 = nn.Sequential(
-            torch.nn.Upsample(scale_factor=2, mode='nearest', align_corners=None),
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(256, 128, kernel_size=3, stride=1, padding=0),
-            nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
-            nn.ReLU(inplace=True)
-        )
-        self.deconv4 = nn.Sequential(
-            torch.nn.Upsample(scale_factor=2, mode='nearest', align_corners=None),
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(256, 64, kernel_size=3, stride=1, padding=0),
-            nn.BatchNorm2d(64, eps=0.001, momentum=0.01),
-            nn.ReLU(inplace=True)
-        )
-        
-        self.depth_pred = nn.Sequential(
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(64, self.num_output_channels, kernel_size=3, stride=1, padding=0),
-            nn.Softplus()
-        )
-        
-        self.conv1x1 = nn.Sequential(
-            nn.Conv2d(self.channels_kernels_flatten, 256, kernel_size=1, stride=1, padding=0)
-            )
-
-        self.refine_conv = nn.Sequential(
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(512, 128, kernel_size=3, stride=1, padding=0),
-            nn.BatchNorm2d(128, eps=0.001, momentum=0.01),
-            nn.ReLU(inplace=True)
-        )
-
-    def forward(self, feature_maps, seg_preds, kernel_preds):
-        num_ins_levels = len(kernel_preds)
-        B = feature_maps[0].shape[0]
-        flatten_kernel = torch.cat([kernel_preds[i].permute(0, 2, 3, 1).view(B, -1, self.num_kernels) for i in range(num_ins_levels)], dim=1).detach()
-        _, N, I = flatten_kernel.shape
-        flatten_kernel = flatten_kernel.view(-1, N, I, 1, 1)
-        mask_preds = torch.cat([F.conv2d(seg_preds[img_idx].unsqueeze(0).detach(), flatten_kernel[img_idx], stride=1) for img_idx in range(B)], dim=0).sigmoid().detach()
-        mask_preds = self.conv1x1(mask_preds)
-        mask_preds = F.interpolate(mask_preds, scale_factor=0.25, mode='bilinear', align_corners=False, recompute_scale_factor=False)
-        feats = list(reversed(feature_maps))
-        
-        
-        x = self.deconv1(self.conv1(self.latlayer1(feats[0])))
-        
-        x = self.refine_conv(torch.cat([x, torch.mul(x, mask_preds)], dim=1))
-
-        x = self.deconv2(torch.cat([self.conv2(self.latlayer2(feats[1])), x], dim=1))
-        x = self.deconv3(torch.cat([self.conv3(self.latlayer3(feats[2])), x], dim=1))
-        x = self.deconv4(torch.cat([self.conv4(self.latlayer4(feats[3])), x], dim=1))
-        x = self.depth_pred(x)
-
-        return x
 
 
 if __name__ == "__main__":

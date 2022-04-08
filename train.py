@@ -117,7 +117,7 @@ if args.batch_size // torch.cuda.device_count() < 6:
         print('Per-GPU batch size is less than the recommended limit for batch norm. Disabling batch norm.')
     cfg.freeze_bn = True
 
-loss_types = ['ins', 'lav', 'cat', 'dpt', 'pln']
+loss_types = ['ins', 'lav', 'cat', 'edge']
 
 if torch.cuda.is_available():
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
@@ -136,7 +136,7 @@ class NetLoss(nn.Module):
         self.net = net
         self.criterion = criterion
     
-    def forward(self, batched_images, batched_gt_instances, batched_gt_depths):
+    def forward(self, batched_images, batched_gt_instances, batched_gt_depths, batched_gt_edges):
         """
         Args:
             - batched_images: Tensor, each images in (C, H, W) format.
@@ -145,8 +145,9 @@ class NetLoss(nn.Module):
         Returns:
             - losses: a dict, losses from PlaneRecNet
         """
-        mask_pred, cate_pred, kernel_pred, depth_pred = self.net(batched_images)
-        losses = self.criterion(self.net, mask_pred, cate_pred, kernel_pred, depth_pred, batched_gt_instances, batched_gt_depths)
+        batched_gt_edges = batched_gt_edges
+        mask_pred, cate_pred, kernel_pred, edge_pred = self.net(batched_images)
+        losses = self.criterion(self.net, mask_pred, cate_pred, kernel_pred, edge_pred, batched_gt_instances, batched_gt_depths, batched_gt_edges)
         return losses
 
 
@@ -185,13 +186,16 @@ class CustomDataParallel(nn.DataParallel):
             allocation = [args.batch_size // len(devices)] * (len(devices) - 1)
             allocation.append(args.batch_size - sum(allocation)) # The rest might need more/less
         
-        batched_images, batched_gt_instances, batched_gt_depths = datum
+        # add edge
+        batched_images, batched_gt_instances, batched_gt_depths, batched_gt_edges = datum
 
         cur_idx = 0
         for device, alloc in zip(devices, allocation):
             for _ in range(alloc):
                 batched_images[cur_idx]  = gradinator(batched_images[cur_idx].to(device))
                 batched_gt_depths[cur_idx]  = gradinator(batched_gt_depths[cur_idx].to(device))
+                # edge
+                batched_gt_edges[cur_idx]  = gradinator(batched_gt_edges[cur_idx].to(device))
                 for key in batched_gt_instances[cur_idx]:
                     batched_gt_instances[cur_idx][key] = gradinator(batched_gt_instances[cur_idx][key].to(device))
                 cur_idx += 1
@@ -199,18 +203,21 @@ class CustomDataParallel(nn.DataParallel):
         if cfg.preserve_aspect_ratio:
             # Choose a random size from the batch
             _, h, w = batched_images[random.randint(0, len(batched_images)-1)].size()
-            for idx, (image, gt_depth, gt_instances) in enumerate(zip(batched_images, batched_gt_depths, batched_gt_instances)):
-                batched_images[idx], batched_gt_depths[idx], batched_gt_instances[idx] \
-                    = enforce_size(image, gt_depth, gt_instances, w, h)
+            # edge
+            for idx, (image, gt_depth, gt_edge, gt_instances) in enumerate(zip(batched_images, batched_gt_depths, batched_gt_edges, batched_gt_instances)):
+                batched_images[idx], batched_gt_depths[idx], batched_gt_edges[idx], batched_gt_instances[idx] \
+                    = enforce_size(image, gt_depth, gt_edge, gt_instances, w, h)
         cur_idx = 0
-        split_images, split_depths, split_instances = [[None for alloc in allocation] for _ in range(3)]
+        # increase range to 4
+        split_images, split_depths, split_edges, split_instances = [[None for alloc in allocation] for _ in range(4)]
 
         for device_idx, alloc in enumerate(allocation):
             split_images[device_idx]    = torch.stack(batched_images[cur_idx:cur_idx+alloc], dim=0)
             split_depths[device_idx]    = torch.stack(batched_gt_depths[cur_idx:cur_idx+alloc], dim=0)
+            split_edges[device_idx]    = torch.stack(batched_gt_edges[cur_idx:cur_idx+alloc], dim=0)
             split_instances[device_idx]   = batched_gt_instances[cur_idx:cur_idx+alloc]
             cur_idx += alloc
-        return split_images, split_instances, split_depths
+        return split_images, split_instances, split_depths, split_edges
 
 
 def train():
@@ -253,8 +260,7 @@ def train():
         {'params': net.backbone.parameters(), 'lr': 5*args.lr},
         {'params': net.fpn.parameters(), 'lr': args.lr},
         {'params': net.inst_head.parameters(), 'lr': args.lr},
-        {'params': net.mask_head.parameters(), 'lr': args.lr},
-        {'params': net.depth_decoder.parameters(), 'lr': 2*args.lr}], lr=args.lr)
+        {'params': net.mask_head.parameters(), 'lr': args.lr}], lr=args.lr)
     
     criterion = PlaneRecNetLoss()
 
