@@ -173,7 +173,7 @@ class CustomDataParallel(nn.DataParallel):
     It should also be faster than the general case.
     
     """
-    def scatter(self, inputs, kwargs, device_ids=['cuda:0']):
+    def scatter(self, inputs, kwargs, device_ids=['cuda:2']):
         # More like scatter and data prep at the same time. The point is we prep the data in such a way
         # that no scatter is necessary, and there's no need to shuffle stuff around different GPUs.
         devices = ['cuda:' + str(x) for x in device_ids]
@@ -191,13 +191,13 @@ class CustomDataParallel(nn.DataParallel):
         return out
     
     @torch.no_grad()
-    def prepare_data(self, datum, devices:list=['cuda:0'], allocation:list=None):
+    def prepare_data(self, datum, devices:list=['cuda:2'], allocation:list=None):
 
         def gradinator(x):
             x.requires_grad = False
             return x
         if devices is None:
-            devices = ['cuda:0']
+            devices = ['cuda:2']
         if allocation is None:
             allocation = [args.batch_size // len(devices)] * (len(devices) - 1)
             allocation.append(args.batch_size - sum(allocation)) # The rest might need more/less
@@ -289,11 +289,11 @@ def train():
             exit(-1)
     
     net = CustomDataParallel(NetLoss(net, criterion))
-    net = net.cuda(0)
+    net = net.cuda(2)
 
     # Initialize everything
     if not cfg.freeze_bn: prn_net.freeze_bn() # Freeze bn so we don't kill our means
-    prn_net(torch.zeros(1, 3, cfg.max_size, cfg.max_size).cuda(0))
+    prn_net(torch.zeros(1, 3, cfg.max_size, cfg.max_size).cuda(2))
     if not cfg.freeze_bn: prn_net.freeze_bn(True)
 
     # Initialize TensorBoardX Writer

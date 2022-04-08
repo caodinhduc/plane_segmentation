@@ -150,7 +150,7 @@ class PlaneRecNetLoss(nn.Module):
             if self.dataset_name == 'Stanford 2D3DS':
                 # dilate the valid mask, to filter out invalid gradient values
                 valid_mask = gt_depths>0
-                dilate_kernel = torch.autograd.Variable(torch.ones((1, 1, 5, 5)).cuda(0)) 
+                dilate_kernel = torch.autograd.Variable(torch.ones((1, 1, 5, 5)).cuda(2)) 
                 invalid_mask = valid_mask.logical_not().float()
                 dilate_valid_mask = F.conv2d(invalid_mask, dilate_kernel, padding=2).bool().logical_not()
                 valid_mask = dilate_valid_mask
@@ -288,13 +288,13 @@ def compute_gradient_map(depth_map, valid_mask=None):
                             [2, 0, -2],
                             [1, 0, -1]])
     sobel_x = sobel_x.view((1, 1, 3, 3))
-    sobel_x = torch.autograd.Variable(sobel_x.cuda(0))
+    sobel_x = torch.autograd.Variable(sobel_x.cuda(2))
 
     sobel_y = torch.Tensor([[1, 2, 1],
                             [0, 0, 0],
                             [-1, -2, -1]])
     sobel_y = sobel_y.view((1, 1, 3, 3))
-    sobel_y = torch.autograd.Variable(sobel_y.cuda(0))
+    sobel_y = torch.autograd.Variable(sobel_y.cuda(2))
     
     depth_map_padded = F.pad(depth_map, pad=(1,1,1,1), mode='reflect') # Don't use zero padding mode, you know why.
     gx = F.conv2d(depth_map_padded, (1.0 / 8.0) * sobel_x, padding=0)
@@ -402,7 +402,7 @@ class EdgeLoss(nn.Module):
         weight[ignore_index] = 0
 
         weight = torch.from_numpy(weight)
-        weight = weight.cuda(0)
+        weight = weight.cuda(2)
         loss = F.binary_cross_entropy_with_logits(log_p, target_t, weight, size_average=True)
         return loss
     

@@ -530,9 +530,9 @@ if __name__ == "__main__":
         print(cfg.backbone.name)
         
     net.eval()
-    net = net.cuda(0)
+    net = net.cuda(2)
     torch.set_default_tensor_type("torch.cuda.FloatTensor")
-    frame = torch.from_numpy(cv2.imread("data/example_nyu.jpg", cv2.IMREAD_COLOR)).cuda(0).float()
+    frame = torch.from_numpy(cv2.imread("data/example_nyu.jpg", cv2.IMREAD_COLOR)).cuda(2).float()
     batch = FastBaseTransform()(frame.unsqueeze(0))
     y = net(batch)
     
