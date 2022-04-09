@@ -229,7 +229,7 @@ def get_points_coordinate(depth, intrinsic_inv):
                            torch.arange(0, W, dtype=torch.float)])
     y, x = y.contiguous(), x.contiguous()
     y, x = y.view(H * W), x.view(H * W)
-    xyz = torch.stack((x, y, torch.ones_like(x))).cuda(2)  # [3, H*W]
+    xyz = torch.stack((x, y, torch.ones_like(x))).cuda(0)  # [3, H*W]
     xyz = torch.unsqueeze(xyz, 0).repeat(B, 1, 1)  # [B, 3, H*W]
     xyz = torch.matmul(intrinsic_inv, xyz) # [B, 3, H*W]
     depth_xyz = xyz * depth.view(B, 1, -1)  # [B, 3, Ndepth, H*W]
@@ -248,7 +248,7 @@ def get_surface_normal(point_clouds, valid_condition):
     valid_condition = valid_condition.view(-1, 1, 5 * 5, H, W)
     valid_condition = valid_condition.permute(0, 3, 4, 2, 1)  # (b, h, w, self.k_size*self.k_size, 1)
     valid_condition_all = valid_condition.repeat([1, 1, 1, 1, 3])
-    valid_condition_all = (valid_condition_all > 0.5).cuda(2)
+    valid_condition_all = (valid_condition_all > 0.5).cuda(0)
     
     
     # An = b
@@ -260,11 +260,11 @@ def get_surface_normal(point_clouds, valid_condition):
     matrix_a_trans = matrix_a_valid.transpose(3, 4)
     
     matrix_a_trans = matrix_a.transpose(3, 4)
-    matrix_b = torch.ones([1, H, W, 25, 1]).float().cuda(2)
+    matrix_b = torch.ones([1, H, W, 25, 1]).float().cuda(0)
 
     # dot(A.T, A)
     point_multi = torch.matmul(matrix_a_trans, matrix_a_valid)
-    matrix_deter = torch.linalg.det(point_multi.to("cpu")).cuda(2)
+    matrix_deter = torch.linalg.det(point_multi.to("cpu")).cuda(0)
     # make inversible
     inverse_condition = torch.ge(matrix_deter, 1e-5)
     inverse_condition = inverse_condition.unsqueeze(-1).unsqueeze(-1)
@@ -275,8 +275,8 @@ def get_surface_normal(point_clouds, valid_condition):
     diag_element = diag_element.unsqueeze(0).unsqueeze(0).unsqueeze(0)
     diag_matrix = diag_element.repeat(1, H, W, 1, 1)
     # inversible matrix
-    inversible_matrix = torch.where(inverse_condition_all, point_multi, diag_matrix.cuda(2))
-    inv_matrix = torch.inverse(inversible_matrix.to("cpu")).cuda(2)
+    inversible_matrix = torch.where(inverse_condition_all, point_multi, diag_matrix.cuda(0))
+    inv_matrix = torch.inverse(inversible_matrix.to("cpu")).cuda(0)
 
     ## step.3 compute normal vector use least square
     # n = (A.T A)^-1 A.T b // || (A.T A)^-1 A.T b ||2

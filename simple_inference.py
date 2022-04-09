@@ -152,7 +152,7 @@ def inference_image(net: PlaneRecNet, path: str, save_path: str = None):
     frame_np = cv2.resize(frame_np, calc_size_preserve_ar(W, H, cfg.max_size), interpolation=cv2.INTER_LINEAR)
     frame_np = pad_even_divided(frame_np) #pad image to be evenly divided by 32
 
-    frame = torch.from_numpy(frame_np).cuda(2).float()
+    frame = torch.from_numpy(frame_np).cuda(0).float()
     batch = FastBaseTransform()(frame.unsqueeze(0))
     results = net(batch)
 
@@ -212,7 +212,7 @@ def ibims1(net: PlaneRecNet, in_folder: str, out_folder: str):
         rgb = data['rgb'][0][0]   # RGB image
         if rgb is None:
             return
-        frame = torch.from_numpy(rgb).cuda(2).float()
+        frame = torch.from_numpy(rgb).cuda(0).float()
         batch = FastBaseTransform()(frame.unsqueeze(0))
         results = net(batch)
         pred_depth = results[0]["pred_depth"].squeeze().cpu().numpy()
@@ -251,7 +251,7 @@ def ibims1_pd(net: PlaneRecNet, in_folder: str, out_folder: str):
         rgb = data['rgb'][0][0]   # RGB image
         if rgb is None:
             return
-        frame = torch.from_numpy(rgb).cuda(2).float()
+        frame = torch.from_numpy(rgb).cuda(0).float()
         batch = FastBaseTransform()(frame.unsqueeze(0))
         results = net(batch)
         pred_depth = results[0]["pred_depth"]#.squeeze().cpu().numpy()
@@ -259,8 +259,8 @@ def ibims1_pd(net: PlaneRecNet, in_folder: str, out_folder: str):
         if pred_masks is not None:
 
             k_matrix = calib.transpose()
-            k_matrix = torch.from_numpy(k_matrix).double().cuda(2)
-            intrinsic_inv = torch.inverse(k_matrix).double().cuda(2)
+            k_matrix = torch.from_numpy(k_matrix).double().cuda(0)
+            intrinsic_inv = torch.inverse(k_matrix).double().cuda(0)
 
             B, C, H, W  = pred_depth.shape
 
@@ -340,7 +340,7 @@ if __name__ == "__main__":
         print(cfg.backbone.name)
         
     net.train(mode=False)
-    net = net.cuda(2)
+    net = net.cuda(0)
     torch.set_default_tensor_type("torch.cuda.FloatTensor")
 
     if args.image is not None:

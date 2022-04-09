@@ -93,13 +93,13 @@ def evaluate(net: PlaneRecNet, dataset, during_training=False, eval_nums=-1):
             timer.reset()
 
             image, gt_instances, gt_depth, gt_edges = dataset.pull_item(image_idx)
-            batch = Variable(image.unsqueeze(0)).cuda(2)
+            batch = Variable(image.unsqueeze(0)).cuda(0)
 
             batched_result = net(batch) # if batch_size = 1, result = batched_result[0]
             result = batched_result[0]
 
             # TODO: this dict looping is not a good practice, python < 3.6 doesn't keep keys/values in same order as declared.
-            gt_masks, gt_boxes, gt_classes, gt_planes, k_matrices = [v.cuda(2) for k, v in gt_instances.items()]
+            gt_masks, gt_boxes, gt_classes, gt_planes, k_matrices = [v.cuda(0) for k, v in gt_instances.items()]
             pred_masks, pred_boxes, pred_classes, pred_scores, pred_edges = [v for k, v in result.items()]
 
             if pred_masks is not None:
@@ -145,8 +145,8 @@ def tensorborad_visual_log(net: PlaneRecNet, dataset, writer: SummaryWriter, ite
         for it, image_idx in enumerate(dataset_indices):
             image, _, _, _ = dataset.pull_item(image_idx)
             frame_ori = dataset.pull_image(image_idx)
-            frame_tensor = torch.from_numpy(frame_ori).cuda(2).float()
-            batch = Variable(image.unsqueeze(0)).cuda(2)
+            frame_tensor = torch.from_numpy(frame_ori).cuda(0).float()
+            batch = Variable(image.unsqueeze(0)).cuda(0)
 
             batched_result = net(batch) # if batch_size = 1, result = batched_result[0]
             seg_on_frame_numpy, pred_edge = display_on_frame(batched_result[0], frame_tensor, mask_alpha=0.35)
@@ -366,7 +366,7 @@ if __name__ == '__main__':
         net.eval()
         print("done.")
 
-        net = net.cuda(2)
+        net = net.cuda(0)
         evaluate(net, dataset, during_training=False, eval_nums=args.max_images)
 
         if args.autopsy:
