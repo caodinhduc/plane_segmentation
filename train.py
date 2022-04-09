@@ -173,7 +173,7 @@ class CustomDataParallel(nn.DataParallel):
     It should also be faster than the general case.
     
     """
-    def scatter(self, inputs, kwargs, device_ids=['cuda:2']):
+    def scatter(self, inputs, kwargs, device_ids=[2]):
         # More like scatter and data prep at the same time. The point is we prep the data in such a way
         # that no scatter is necessary, and there's no need to shuffle stuff around different GPUs.
         devices = ['cuda:' + str(x) for x in device_ids]
