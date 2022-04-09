@@ -17,8 +17,8 @@ _running_timer = None
 _disable_all = False
 
 starter, ender = (
-    torch.cuda.Event(enable_timing=True),
-    torch.cuda.Event(enable_timing=True),
+    torch.cuda.Event(),
+    torch.cuda.Event(),
 )
 
 
