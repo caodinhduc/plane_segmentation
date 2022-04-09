@@ -16,10 +16,8 @@ _timer_stack = []
 _running_timer = None
 _disable_all = False
 
-starter, ender = (
-    torch.cuda.Event(),
-    torch.cuda.Event(),
-)
+starter = torch.cuda.Event(enable_timing=True)
+ender = torch.cuda.Event(enable_timing=True)
 
 
 def disable_all():
