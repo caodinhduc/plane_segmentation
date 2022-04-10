@@ -186,10 +186,7 @@ class PlaneRecNetLoss(nn.Module):
         gt_bboxes_raw = gt_instances_per_frame['boxes']
         gt_labels_raw = gt_instances_per_frame['classes']
         gt_masks_raw = gt_instances_per_frame['masks']
-        device = gt_labels_raw[0].device
-
-        print('DEVICE: ', device)
-
+  
         # ins: gt_bboxes -> [xmin, ymin, xmax, ymax]s
         gt_areas = torch.sqrt((gt_bboxes_raw[:, 2] - gt_bboxes_raw[:, 0]) * (gt_bboxes_raw[:, 3] - gt_bboxes_raw[:, 1]))
         ins_label_list, cate_label_list, ins_ind_label_list, grid_order_list = [], [], [], []
