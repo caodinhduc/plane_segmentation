@@ -296,7 +296,7 @@ def compute_gradient_map(depth_map, valid_mask=None):
     sobel_y = sobel_y.view((1, 1, 3, 3))
     sobel_y = torch.autograd.Variable(sobel_y.cuda(0))
     
-    depth_map_padded = F.pad(depth_map, pad=(1,1,1,1), mode='reflect') # Don't use zero padding mode, you know why.
+    depth_map_padded = F.pad(depth_map, pad=(1,1,1,1), mode='reflect').to('cuda:0') # Don't use zero padding mode, you know why.
     gx = F.conv2d(depth_map_padded, (1.0 / 8.0) * sobel_x, padding=0)
     gy = F.conv2d(depth_map_padded, (1.0 / 8.0) * sobel_y, padding=0)
     gradients = torch.pow(gx, 2) + torch.pow(gy, 2)
