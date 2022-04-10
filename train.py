@@ -281,7 +281,7 @@ def train():
         {'params': net.inst_head.parameters(), 'lr': args.lr},
         {'params': net.mask_head.parameters(), 'lr': args.lr}], lr=args.lr)
     
-    criterion = PlaneRecNetLoss().cuda(0)
+    criterion = PlaneRecNetLoss()
 
     if args.batch_alloc is not None:
         args.batch_alloc = [int(x) for x in args.batch_alloc.split(',')]
