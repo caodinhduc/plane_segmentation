@@ -22,6 +22,7 @@ from models.functions.losses import PlaneRecNetLoss
 from models.functions.nms import point_nms
 
 import eval as eval_script
+device = torch.device(cfg.device)
 
 parser = argparse.ArgumentParser(description='PlaneRecNet Training Script')
 # Basic Settings
@@ -176,10 +177,10 @@ class CustomDataParallel(nn.DataParallel):
     def scatter(self, inputs, kwargs, device_ids=[0]):
         # More like scatter and data prep at the same time. The point is we prep the data in such a way
         # that no scatter is necessary, and there's no need to shuffle stuff around different GPUs.
-        devices = ['cuda:' + str(x) for x in device_ids]
+        devices = ['cuda:0']
         splits = self.prepare_data(inputs[0], devices, allocation=args.batch_alloc)
 
-        return [[split[device_idx] for split in splits] for device_idx in range(len(devices))], \
+        return [[split[0] for split in splits]], \
             [kwargs] * len(devices)
 
     def gather(self, outputs, output_device):
@@ -280,7 +281,7 @@ def train():
         {'params': net.inst_head.parameters(), 'lr': args.lr},
         {'params': net.mask_head.parameters(), 'lr': args.lr}], lr=args.lr)
     
-    criterion = PlaneRecNetLoss()
+    criterion = PlaneRecNetLoss().cuda(0)
 
     if args.batch_alloc is not None:
         args.batch_alloc = [int(x) for x in args.batch_alloc.split(',')]

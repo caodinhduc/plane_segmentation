@@ -16,7 +16,6 @@ from models.backbone import construct_backbone
 from data.augmentations import FastBaseTransform
 from edge_stream import GSCNN
 
-torch.cuda.current_device()
 
 device = torch.device(cfg.device)
 

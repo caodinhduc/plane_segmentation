@@ -48,7 +48,7 @@ class FPN(nn.Module):
 
         # build laterals
         laterals = []
-        x = torch.zeros(1, device=inputs[0].device)
+        x = torch.zeros(1, device=device)
         for i, lateral_conv in enumerate(self.lateral_convs):
             if i > 0:
                 _, _, h, w = inputs[i + self.start_level].size()
