@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from data.config import cfg
+device = torch.device(cfg.device)
 
 class FPN(nn.Module):
     def __init__(

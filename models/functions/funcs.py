@@ -5,6 +5,8 @@ import cv2
 from math import sqrt
 import numpy as np
 
+device = torch.device('cuda:0')
+
 @torch.jit.script
 def intersect(box_a, box_b):
     """ We resize both tensors to [A,B,2] without new malloc:
@@ -213,8 +215,8 @@ def pad_even_divided(img, divisor=32):
 def center_of_mass(bitmasks):
     _, h, w = bitmasks.size()
 
-    ys = torch.arange(0, h, dtype=torch.float32, device=bitmasks.device)
-    xs = torch.arange(0, w, dtype=torch.float32, device=bitmasks.device)
+    ys = torch.arange(0, h, dtype=torch.float32, device=device)
+    xs = torch.arange(0, w, dtype=torch.float32, device=device)
 
     m00 = bitmasks.sum(dim=-1).sum(dim=-1).clamp(min=1e-6)
     m10 = (bitmasks * xs).sum(dim=-1).sum(dim=-1)

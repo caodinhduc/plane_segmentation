@@ -36,7 +36,7 @@ def gradient_central_diff(input, cuda):
     kernel_t = 0.5 * torch.Tensor(kernel) * -1.  # pytorch implements correlation instead of conv
     if type(cuda) is int:
         if cuda != -1:
-            kernel_t = kernel_t.cuda(device=cuda)
+            kernel_t = kernel_t.cuda(0)
     else:
         if cuda is True:
             kernel_t = kernel_t.cuda(0)
@@ -90,7 +90,7 @@ def convTri(input, r, cuda=False):
     kernel = torch.Tensor([f]) / (r + 1) ** 2
     if type(cuda) is int:
         if cuda != -1:
-            kernel = kernel.cuda(device=cuda)
+            kernel = kernel.cuda(0)
     else:
         if cuda is True:
             kernel = kernel.cuda(0)

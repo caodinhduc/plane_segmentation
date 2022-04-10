@@ -151,7 +151,6 @@ class NetLoss(nn.Module):
         super().__init__()
         self.net = net
         self.criterion = criterion
-        print('criterion device: ', self.criterion.device)
     
     def forward(self, batched_images, batched_gt_instances, batched_gt_depths, batched_gt_edges):
         """

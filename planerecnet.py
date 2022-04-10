@@ -18,6 +18,8 @@ from edge_stream import GSCNN
 
 torch.cuda.current_device()
 
+device = torch.device(cfg.device)
+
 class PlaneRecNet(nn.Module):
     def __init__(self, cfg):
         super().__init__()
@@ -365,8 +367,8 @@ class SOLOv2InsHead(nn.Module):
         for idx, feature in enumerate(features):
             ins_kernel_feat = feature
             # concat coord
-            x_range = torch.linspace(-1, 1, ins_kernel_feat.shape[-1], device=ins_kernel_feat.device)
-            y_range = torch.linspace(-1, 1, ins_kernel_feat.shape[-2], device=ins_kernel_feat.device)
+            x_range = torch.linspace(-1, 1, ins_kernel_feat.shape[-1], device=device)
+            y_range = torch.linspace(-1, 1, ins_kernel_feat.shape[-2], device=device)
             y, x = torch.meshgrid(y_range, x_range)
             y = y.expand([ins_kernel_feat.shape[0], 1, -1, -1])
             x = x.expand([ins_kernel_feat.shape[0], 1, -1, -1])
@@ -478,8 +480,8 @@ class SOLOv2MaskHead(nn.Module):
         for i in range(1, self.num_levels):
             mask_feat = features[i]
             if i == 3:  # add for coord.
-                x_range = torch.linspace(-1, 1, mask_feat.shape[-1], device=mask_feat.device)
-                y_range = torch.linspace(-1, 1, mask_feat.shape[-2], device=mask_feat.device)
+                x_range = torch.linspace(-1, 1, mask_feat.shape[-1], device=device)
+                y_range = torch.linspace(-1, 1, mask_feat.shape[-2], device=device)
                 y, x = torch.meshgrid(y_range, x_range)
                 y = y.expand([mask_feat.shape[0], 1, -1, -1])
                 x = x.expand([mask_feat.shape[0], 1, -1, -1])

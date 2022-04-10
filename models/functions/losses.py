@@ -8,6 +8,8 @@ from data.config import cfg
 from models.functions.funcs import imrescale, center_of_mass
 from models.functions.vnl import VNL_Loss
 
+device = torch.device(cfg.device)
+
 
 class PlaneRecNetLoss(nn.Module):
     """ Joint Weighted Loss Function for PlaneRecNet
