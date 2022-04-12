@@ -92,10 +92,11 @@ def evaluate(net: PlaneRecNet, dataset, during_training=False, eval_nums=-1):
         for it, image_idx in enumerate(dataset_indices):
             timer.reset()
 
-            image, gt_instances, gt_depth, gt_edges = dataset.pull_item(image_idx)
+            image, gt_instances, gt_depth, gt_edges, gt_gradients = dataset.pull_item(image_idx)
             batch = Variable(image.unsqueeze(0)).cuda(0)
+            gt_gradients = Variable(gt_gradients.unsqueeze(0)).cuda(0)
 
-            batched_result = net(batch) # if batch_size = 1, result = batched_result[0]
+            batched_result = net(batch, gt_gradients) # if batch_size = 1, result = batched_result[0]
             result = batched_result[0]
 
             # TODO: this dict looping is not a good practice, python < 3.6 doesn't keep keys/values in same order as declared.
@@ -143,17 +144,18 @@ def tensorborad_visual_log(net: PlaneRecNet, dataset, writer: SummaryWriter, ite
     try:
         # Main eval loop
         for it, image_idx in enumerate(dataset_indices):
-            image, _, _, _ = dataset.pull_item(image_idx)
+            image, _, _, _, gradient = dataset.pull_item(image_idx)
             frame_ori = dataset.pull_image(image_idx)
             frame_tensor = torch.from_numpy(frame_ori).cuda(0).float()
             batch = Variable(image.unsqueeze(0)).cuda(0)
+            gradient = Variable(gradient.unsqueeze(0)).cuda(0)
 
-            batched_result = net(batch) # if batch_size = 1, result = batched_result[0]
+            batched_result = net(batch, gradient) # if batch_size = 1, result = batched_result[0]
             seg_on_frame_numpy, pred_edge = display_on_frame(batched_result[0], frame_tensor, mask_alpha=0.35)
 
             seg_on_frame_numpy = cv2.cvtColor(seg_on_frame_numpy, cv2.COLOR_BGR2RGB)
             writer.add_image("seg/pred/{}".format(it), seg_on_frame_numpy, iteration, dataformats='HWC')
-            writer.add_image("edge/pred/{}".format(it), 1.0 - pred_edge, iteration, dataformats='HW')
+            writer.add_image("edge/pred/{}".format(it), pred_edge, iteration, dataformats='HW')
 
     except KeyboardInterrupt:
         print('Stopping...')

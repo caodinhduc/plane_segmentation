@@ -1,3 +1,4 @@
+from statistics import mode
 import torch
 import torch.nn.functional as F
 from network import Resnet
@@ -52,8 +53,9 @@ class GSCNN(nn.Module):
         # self.bot_aspp = nn.Conv2d(1280 + 256, 256, kernel_size=1, bias=False)
 
         self.sigmoid = nn.Sigmoid()
+        self.cw = nn.Conv2d(2, 1, kernel_size=1, padding=0, bias=False)
 
-    def forward(self, features, x_size =(640,480),gts=None):
+    def forward(self, features, gradient, x_size =(640,480),gts=None):
         """
         features: backbone feature: 
         256 x 120 x 160
@@ -73,13 +75,6 @@ class GSCNN(nn.Module):
                             mode='bilinear', align_corners=True)
         s3 = F.interpolate(self.dsn3(features[3]), x_size,
                             mode='bilinear', align_corners=True)
-        
-
-        # im_arr = inp.cpu().numpy().transpose((0,2,3,1)).astype(np.uint8)
-        # canny = np.zeros((x_size[0], 1, x_size[2], x_size[3]))
-        # for i in range(x_size[0]):
-        #     canny[i] = cv2.Canny(im_arr[i],10,100)
-        # canny = torch.from_numpy(canny).cuda(0).float()
 
         cs = self.res1(m1f)
         cs = F.interpolate(cs, x_size,
@@ -99,7 +94,10 @@ class GSCNN(nn.Module):
         cs = self.gate3(cs, s3)
         cs = self.fuse(cs)
         cs = F.interpolate(cs, x_size,
-                           mode='bilinear', align_corners=True)
+                           mode='bilinear', align_corners=False)
 
         edge_out = self.sigmoid(cs)
-        return edge_out
+        cat = torch.cat((edge_out, gradient), dim=1)
+        cw = self.cw(cat)
+        attention_mask = self.sigmoid(cw)
+        return edge_out, attention_mask

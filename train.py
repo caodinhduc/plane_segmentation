@@ -153,7 +153,7 @@ class NetLoss(nn.Module):
         self.net = net
         self.criterion = criterion
     
-    def forward(self, batched_images, batched_gt_instances, batched_gt_depths, batched_gt_edges):
+    def forward(self, batched_images, batched_gt_instances, batched_gt_depths, batched_gt_edges, batched_gt_gradients):
         """
         Args:
             - batched_images: Tensor, each images in (C, H, W) format.
@@ -162,8 +162,7 @@ class NetLoss(nn.Module):
         Returns:
             - losses: a dict, losses from PlaneRecNet
         """
-        batched_gt_edges = batched_gt_edges
-        mask_pred, cate_pred, kernel_pred, edge_pred = self.net(batched_images)
+        mask_pred, cate_pred, kernel_pred, edge_pred = self.net(batched_images, batched_gt_gradients)
         losses = self.criterion(self.net, mask_pred, cate_pred, kernel_pred, edge_pred, batched_gt_instances, batched_gt_depths, batched_gt_edges)
         return losses
 
@@ -204,15 +203,16 @@ class CustomDataParallel(nn.DataParallel):
             allocation.append(args.batch_size - sum(allocation)) # The rest might need more/less
         
         # add edge
-        batched_images, batched_gt_instances, batched_gt_depths, batched_gt_edges = datum
+        batched_images, batched_gt_instances, batched_gt_depths, batched_gt_edges, batched_gt_gradients = datum
 
         cur_idx = 0
         for device, alloc in zip(devices, allocation):
             for _ in range(alloc):
                 batched_images[cur_idx]  = gradinator(batched_images[cur_idx].to(device))
                 batched_gt_depths[cur_idx]  = gradinator(batched_gt_depths[cur_idx].to(device))
-                # edge
+                # edge and gradient
                 batched_gt_edges[cur_idx]  = gradinator(batched_gt_edges[cur_idx].to(device))
+                batched_gt_gradients[cur_idx]  = gradinator(batched_gt_gradients[cur_idx].to(device))
                 for key in batched_gt_instances[cur_idx]:
                     batched_gt_instances[cur_idx][key] = gradinator(batched_gt_instances[cur_idx][key].to(device))
                 cur_idx += 1
@@ -221,20 +221,21 @@ class CustomDataParallel(nn.DataParallel):
             # Choose a random size from the batch
             _, h, w = batched_images[random.randint(0, len(batched_images)-1)].size()
             # edge
-            for idx, (image, gt_depth, gt_edge, gt_instances) in enumerate(zip(batched_images, batched_gt_depths, batched_gt_edges, batched_gt_instances)):
-                batched_images[idx], batched_gt_depths[idx], batched_gt_edges[idx], batched_gt_instances[idx] \
-                    = enforce_size(image, gt_depth, gt_edge, gt_instances, w, h)
+            for idx, (image, gt_depth, gt_edge, gt_gradient, gt_instances) in enumerate(zip(batched_images, batched_gt_depths, batched_gt_edges, batched_gt_gradients, batched_gt_instances)):
+                batched_images[idx], batched_gt_depths[idx], batched_gt_edges[idx], batched_gt_gradients[idx], batched_gt_instances[idx] \
+                    = enforce_size(image, gt_depth, gt_edge, gt_gradient, gt_instances, w, h)
         cur_idx = 0
-        # increase range to 4
-        split_images, split_depths, split_edges, split_instances = [[None for alloc in allocation] for _ in range(4)]
+        # increase range to 5 for edge and gradient
+        split_images, split_depths, split_edges, split_gradients, split_instances = [[None for alloc in allocation] for _ in range(5)]
 
         for device_idx, alloc in enumerate(allocation):
             split_images[device_idx]    = torch.stack(batched_images[cur_idx:cur_idx+alloc], dim=0)
             split_depths[device_idx]    = torch.stack(batched_gt_depths[cur_idx:cur_idx+alloc], dim=0)
             split_edges[device_idx]    = torch.stack(batched_gt_edges[cur_idx:cur_idx+alloc], dim=0)
+            split_gradients[device_idx]    = torch.stack(batched_gt_gradients[cur_idx:cur_idx+alloc], dim=0)
             split_instances[device_idx]   = batched_gt_instances[cur_idx:cur_idx+alloc]
             cur_idx += alloc
-        return split_images, split_instances, split_depths, split_edges
+        return split_images, split_instances, split_depths, split_edges, split_gradients
 
 
 def train():
@@ -294,7 +295,7 @@ def train():
 
     # Initialize everything
     if not cfg.freeze_bn: prn_net.freeze_bn() # Freeze bn so we don't kill our means
-    prn_net(torch.zeros(1, 3, cfg.max_size, cfg.max_size).cuda(0))
+    prn_net(torch.zeros(1, 3, 480, 640).cuda(0), torch.zeros(1, 1, 480, 640).cuda(0))
     if not cfg.freeze_bn: prn_net.freeze_bn(True)
 
     # Initialize TensorBoardX Writer
@@ -396,7 +397,7 @@ def train():
                     # log losses to tensorboard
                     if not args.no_tensorboard: 
                         log_losses(writer, losses, iteration)
-                        if iteration % 5000 == 0 and iteration > 0:
+                        if iteration % 200 == 0 and iteration > 0:
                             log_visual_example(prn_net, val_dataset, writer, iteration)
                     if iteration % 100 == 0:
                         # print losses(moving averaged) to console

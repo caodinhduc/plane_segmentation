@@ -145,6 +145,7 @@ def display_on_frame(result, frame, mask_alpha=0.5, fps_str='', no_mask=False, n
 
 def inference_image(net: PlaneRecNet, path: str, save_path: str = None):
     frame_np = cv2.imread(path)
+    frame_np = cv2.resize(frame_np, (640, 480))
     H, W, _ = frame_np.shape
 
     if frame_np is None:
@@ -154,7 +155,13 @@ def inference_image(net: PlaneRecNet, path: str, save_path: str = None):
 
     frame = torch.from_numpy(frame_np).cuda(0).float()
     batch = FastBaseTransform()(frame.unsqueeze(0))
-    results = net(batch)
+
+    # gradient
+    gradient = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+    gradient = cv2.resize(gradient,(640,480))
+    gradient = cv2.Canny(gradient,50,100, 1)/255.0
+    gradient = torch.from_numpy(gradient.astype(np.float32)).unsqueeze(0).unsqueeze(0).cuda(0)
+    results = net(batch, gradient)
 
     blended_frame, edge = display_on_frame(results[0], frame, no_mask=args.no_mask, no_box=args.no_box, no_text=args.no_text)
 
@@ -168,10 +175,10 @@ def inference_image(net: PlaneRecNet, path: str, save_path: str = None):
         
     cv2.imwrite(save_path, blended_frame)
     from torchvision.utils import save_image
-    save_image(edge.data, edge_path)
+    save_image(torch.from_numpy(edge), edge_path)
     
    
-def inference_images(net: PlaneRecNet, in_folder: str, out_folder: str, max_img: int=0, depth_mode: str='colored'):
+def inference_images(net: PlaneRecNet, in_folder: str, out_folder: str, max_img: int=0):
     if not os.path.exists(out_folder):
         os.mkdir(out_folder)
     print()
@@ -347,14 +354,14 @@ if __name__ == "__main__":
         if ':' in args.image:
             inp, out = args.image.split(':')
             print('Inference image: {}'.format(inp))
-            inference_image(net, inp, out, depth_mode=args.depth_mode)
+            inference_image(net, inp, out)
         else:
             print('Inference image: {}'.format(args.image))
-            inference_image(net, args.image, depth_mode=args.depth_mode)
+            inference_image(net, args.image)
     
     if args.images is not None:
         inp, out = args.images.split(':')
-        inference_images(net, inp, out, max_img=args.max_img, depth_mode=args.depth_mode)
+        inference_images(net, inp, out, max_img=args.max_img)
     if args.ibims1 is not None:
         inp, out = args.ibims1.split(':')
         ibims1(net, inp, out)

@@ -25,10 +25,10 @@ class Compose(object):
     def __init__(self, transforms):
         self.transforms = transforms
 
-    def __call__(self, img, depth=None, edge = None, masks=None, boxes=None, labels=None, plane_paras=None):
+    def __call__(self, img, depth=None, edge=None, gradient=None, masks=None, boxes=None, labels=None, plane_paras=None):
         for t in self.transforms:
-            img, depth, edge, masks, boxes, labels, plane_paras = t(img, depth, edge, masks, boxes, labels, plane_paras)
-        return img, depth, edge, masks, boxes, labels, plane_paras
+            img, depth, edge, gradient, masks, boxes, labels, plane_paras = t(img, depth, edge, gradient, masks, boxes, labels, plane_paras)
+        return img, depth, edge, gradient, masks, boxes, labels, plane_paras
 
 
 class Resize_and_Pad(object):
@@ -145,7 +145,7 @@ class Resize(object):
         self.resize_gt = resize_gt
         self.max_size = cfg.max_size
 
-    def __call__(self, image, depth, edge, masks, boxes, labels, plane_paras):
+    def __call__(self, image, depth, edge, gradient, masks, boxes, labels, plane_paras):
         img_h, img_w, _ = image.shape
 
         if img_h != self.max_size and img_w != self.max_size:
@@ -154,6 +154,7 @@ class Resize(object):
             image = cv2.resize(image, (width, height))
             depth = cv2.resize(depth, (width, height))
             edge = cv2.resize(edge, (width, height))
+            gradient = cv2.resize(gradient, (width, height))
 
             if self.resize_gt:
                 # Act like each object is a color channel
@@ -179,7 +180,7 @@ class Resize(object):
         boxes = boxes[keep]
         labels = labels[keep]
 
-        return image, depth, edge, masks, boxes, labels, plane_paras
+        return image, depth, edge, gradient, masks, boxes, labels, plane_paras
 
 
 class RandomSaturation(object):
@@ -189,11 +190,11 @@ class RandomSaturation(object):
         assert self.upper >= self.lower, "contrast upper must be >= lower."
         assert self.lower >= 0, "contrast lower must be non-negative."
 
-    def __call__(self, image, depth=None, edge = None, masks=None, boxes=None, labels=None, plane_paras=None):
+    def __call__(self, image, depth=None, edge=None, gradient=None, masks=None, boxes=None, labels=None, plane_paras=None):
         if random.randint(2):
             image[:, :, 1] *= random.uniform(self.lower, self.upper)
 
-        return image, depth, edge, masks, boxes, labels, plane_paras
+        return image, depth, edge, gradient, masks, boxes, labels, plane_paras
 
 
 class RandomHue(object):
@@ -201,12 +202,12 @@ class RandomHue(object):
         assert delta >= 0.0 and delta <= 360.0
         self.delta = delta
 
-    def __call__(self, image, depth=None, edge=None, masks=None, boxes=None, labels=None, plane_paras=None):
+    def __call__(self, image, depth=None, edge=None, gradient=None, masks=None, boxes=None, labels=None, plane_paras=None):
         if random.randint(2):
             image[:, :, 0] += random.uniform(-self.delta, self.delta)
             image[:, :, 0][image[:, :, 0] > 360.0] -= 360.0
             image[:, :, 0][image[:, :, 0] < 0.0] += 360.0
-        return image, depth, edge, masks, boxes, labels, plane_paras
+        return image, depth, edge, gradient, masks, boxes, labels, plane_paras
 
 
 class ConvertColor(object):
@@ -214,14 +215,14 @@ class ConvertColor(object):
         self.transform = transform
         self.current = current
 
-    def __call__(self, image, depth=None, edge=None, masks=None, boxes=None, labels=None, plane_paras=None):
+    def __call__(self, image, depth=None, edge=None, gradient=None, masks=None, boxes=None, labels=None, plane_paras=None):
         if self.current == 'BGR' and self.transform == 'HSV':
             image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         elif self.current == 'HSV' and self.transform == 'BGR':
             image = cv2.cvtColor(image, cv2.COLOR_HSV2BGR)
         else:
             raise NotImplementedError
-        return image, depth, edge, masks, boxes, labels, plane_paras
+        return image, depth, edge, gradient, masks, boxes, labels, plane_paras
 
 
 class RandomContrast(object):
@@ -232,11 +233,11 @@ class RandomContrast(object):
         assert self.lower >= 0, "contrast lower must be non-negative."
 
     # expects float image
-    def __call__(self, image, depth=None, edge=None, masks=None, boxes=None, labels=None, plane_paras=None):
+    def __call__(self, image, depth=None, edge=None, gradient=None, masks=None, boxes=None, labels=None, plane_paras=None):
         if random.randint(2):
             alpha = random.uniform(self.lower, self.upper)
             image *= alpha
-        return image, depth, edge, masks, boxes, labels, plane_paras
+        return image, depth, edge, gradient, masks, boxes, labels, plane_paras
 
 
 class RandomBrightness(object):
@@ -245,60 +246,63 @@ class RandomBrightness(object):
         assert delta <= 255.0
         self.delta = delta
 
-    def __call__(self, image, depth=None, edge=None, masks=None, boxes=None, labels=None, plane_paras=None):
+    def __call__(self, image, depth=None, edge=None, gradient=None, masks=None, boxes=None, labels=None, plane_paras=None):
         if random.randint(2):
             delta = random.uniform(-self.delta, self.delta)
             image += delta
-        return image, depth, edge, masks, boxes, labels, plane_paras
+        return image, depth, edge, gradient, masks, boxes, labels, plane_paras
 
 
 class ToCV2Image(object):
-    def __call__(self, tensor, depth, edge, masks=None, boxes=None, labels=None):
-        return tensor.cpu().numpy().astype(np.float32).transpose((1, 2, 0)), depth.numpy().astype(np.float32), edge.numpy().astype(np.float32), masks, boxes, labels
+    def __call__(self, tensor, depth, edge, gradient, masks=None, boxes=None, labels=None):
+        return tensor.cpu().numpy().astype(np.float32).transpose((1, 2, 0)), depth.numpy().astype(np.float32), edge.numpy().astype(np.float32), gradient.numpy().astype(np.float32), masks, boxes, labels
 
 
 class ToTensor(object):
-    def __call__(self, cvimage, depth, edge, masks=None, boxes=None, labels=None, plane_paras=None):
-        return torch.from_numpy(cvimage.astype(np.float32)).permute(2, 0, 1), depth, masks, edge, boxes, labels, plane_paras
+    def __call__(self, cvimage, depth, edge, gradient, masks=None, boxes=None, labels=None, plane_paras=None):
+        return torch.from_numpy(cvimage.astype(np.float32)).permute(2, 0, 1), depth, masks, edge, gradient, boxes, labels, plane_paras
 
 
 class RandomMirror(object):
-    def __call__(self, image, depth, edge, masks, boxes, labels, plane_paras):
+    def __call__(self, image, depth, edge, gradient, masks, boxes, labels, plane_paras):
         _, width, _ = image.shape
         if random.randint(2):
             image = image[:, ::-1]
             depth = depth[:, ::-1] # TODO: Is 1 channel the same as 3 channels? 
             edge = edge[:, ::-1]
+            gradient = gradient[:, ::-1]
             masks = masks[:, :, ::-1]
             boxes = boxes.copy()
             boxes[:, 0::2] = width - boxes[:, 2::-2]
             mirror_trans = np.asarray([[-1,0,0],[0,1,0],[0,0,1]])
             plane_paras[:,:3] = np.matmul(mirror_trans, plane_paras[:,:3].transpose()).transpose()
-        return image, depth, edge, masks, boxes, labels, plane_paras
+        return image, depth, edge, gradient, masks, boxes, labels, plane_paras
 
 
 class RandomFlip(object):
-    def __call__(self, image, depth, edge, masks, boxes, labels, plane_paras):
+    def __call__(self, image, depth, edge, gradient, masks, boxes, labels, plane_paras):
         height , _ , _ = image.shape
         if random.randint(2):
             image = image[::-1, :]
             depth = depth[::-1, :]
             edge = edge[::-1, :]
+            gradient = gradient[::-1, :]
             masks = masks[:, ::-1, :]
             boxes = boxes.copy()
             boxes[:, 1::2] = height - boxes[:, 3::-2]
             flip_trans = np.asarray([[1,0,0],[0,-1,0],[0,0,1]])
             plane_paras[:,:3] = np.matmul(flip_trans, plane_paras[:,:3].transpose()).transpose()
-        return image, depth, edge, masks, boxes, labels, plane_paras
+        return image, depth, edge, gradient, masks, boxes, labels, plane_paras
 
 
 class RandomRot90(object):
-    def __call__(self, image, depth, edge, masks, boxes, labels, plane_paras):
+    def __call__(self, image, depth, edge, gradient, masks, boxes, labels, plane_paras):
         old_height , old_width , _ = image.shape
         k = random.randint(4)
         image = np.rot90(image,k)
         depth = np.rot90(depth,k)
         edge = np.rot90(edge,k)
+        gradient = np.rot90(gradient,k)
         masks = np.array([np.rot90(mask,k) for mask in masks])
         boxes = boxes.copy()
         for _ in range(k):
@@ -307,7 +311,7 @@ class RandomRot90(object):
         rot_90_trans = np.asarray([[0,-1,0],[1,0,0],[0,0,1]])
         plane_paras[:,:3] = np.matmul(rot_90_trans, plane_paras[:,:3].transpose()).transpose()
 
-        return image, depth, edge, masks, boxes, labels, plane_paras
+        return image, depth, edge, gradient, masks, boxes, labels, plane_paras
 # plane paras should be rotated too
 
 
@@ -349,15 +353,15 @@ class PhotometricDistort(object):
         ]
         self.rand_brightness = RandomBrightness()
 
-    def __call__(self, image, depth, edge, masks, boxes, labels, plane_paras):
+    def __call__(self, image, depth, edge, gradient, masks, boxes, labels, plane_paras):
         im = image.copy()
-        im, depth, edge, masks, boxes, labels, plane_paras = self.rand_brightness(im, depth, edge, masks, boxes, labels, plane_paras)
+        im, depth, edge, gradient, masks, boxes, labels, plane_paras = self.rand_brightness(im, depth, edge, gradient, masks, boxes, labels, plane_paras)
         if random.randint(2):
             distort = Compose(self.pd[:-1])
         else:
             distort = Compose(self.pd[1:])
-        im, depth, edge, masks, boxes, labels, plane_paras = distort(im, depth, edge, masks, boxes, labels, plane_paras)
-        return im, depth, edge, masks, boxes, labels, plane_paras
+        im, depth, edge, gradient, masks, boxes, labels, plane_paras = distort(im, depth, edge, gradient, masks, boxes, labels, plane_paras)
+        return im, depth, edge, gradient, masks, boxes, labels, plane_paras
 
 
 class BackboneTransform(object):
@@ -378,11 +382,12 @@ class BackboneTransform(object):
         self.channel_map = {c: idx for idx, c in enumerate(in_channel_order)}
         self.channel_permutation = [self.channel_map[c] for c in transform.channel_order]
 
-    def __call__(self, img, depth, edge, masks=None, boxes=None, labels=None, plane_paras=None):
+    def __call__(self, img, depth, edge, gradient, masks=None, boxes=None, labels=None, plane_paras=None):
 
         img = img.astype(np.float32)
         depth = depth.astype(np.float32)
         edge = edge.astype(np.float32)
+        gradient = gradient.astype(np.float32)
 
         
         if self.transform.normalize:
@@ -396,7 +401,7 @@ class BackboneTransform(object):
         img = img[:, :, self.channel_permutation]
         
 
-        return img.astype(np.float32), depth.astype(np.float32), edge.astype(np.float32), masks, boxes, labels, plane_paras
+        return img.astype(np.float32), depth.astype(np.float32), edge.astype(np.float32), gradient.astype(np.float32), masks, boxes, labels, plane_paras
 
 
 class RandomMotionBlur(object):
@@ -408,7 +413,7 @@ class RandomMotionBlur(object):
         assert self.lower_degree < self.upper_degree
         assert self.angle >= 0
 
-    def __call__(self, image, depth, edge, masks, boxes, labels, plane_paras):
+    def __call__(self, image, depth, edge, gradient, masks, boxes, labels, plane_paras):
 
         if random.randint(3) < 1 :
             degree = random.randint(self.lower_degree, self.upper_degree)
@@ -425,9 +430,9 @@ class RandomMotionBlur(object):
             cv2.normalize(blurred, blurred, 0, 255, cv2.NORM_MINMAX)
             blurred = np.array(blurred, dtype=np.uint8)
 
-            return blurred, depth, edge, masks, boxes, labels, plane_paras
+            return blurred, depth, edge, gradient, masks, boxes, labels, plane_paras
         else:
-            return image, depth, edge, masks, boxes, labels, plane_paras
+            return image, depth, edge, gradient, masks, boxes, labels, plane_paras
 
 
 class RandomGaussianNoise(object):
@@ -458,8 +463,8 @@ class RandomGaussianNoise(object):
 ##########################################
 
 
-def do_nothing(img=None, depth=None, edge=None, masks=None, boxes=None, labels=None, plane_paras=None):
-    return img, depth, edge, masks, boxes, labels, plane_paras
+def do_nothing(img=None, depth=None, edge=None, gradient=None, masks=None, boxes=None, labels=None, plane_paras=None):
+    return img, depth, edge, gradient, masks, boxes, labels, plane_paras
 
 
 def enable_if(condition, obj):
@@ -482,8 +487,8 @@ class SSDAugmentation(object):
             BackboneTransform(cfg.backbone.transform, mean, std, 'BGR')
         ])
 
-    def __call__(self, img, depth=None, edge=None, masks=None, boxes=None, labels=None, plane_paras=None):
-        return self.augment(img, depth, edge, masks, boxes, labels, plane_paras)
+    def __call__(self, img, depth=None, edge=None, gradient=None, masks=None, boxes=None, labels=None, plane_paras=None):
+        return self.augment(img, depth, edge, gradient, masks, boxes, labels, plane_paras)
 
 class BaseTransform(object):
     """ Transorm to be used when evaluating. """
@@ -494,8 +499,8 @@ class BaseTransform(object):
             BackboneTransform(cfg.backbone.transform, mean, std, 'BGR')
         ])
 
-    def __call__(self, img, depth=None, edge=None, masks=None, boxes=None, labels=None, plane_paras=None):
-        return self.augment(img, depth, edge, masks, boxes, labels, plane_paras)
+    def __call__(self, img, depth=None, edge=None, gradient=None, masks=None, boxes=None, labels=None, plane_paras=None):
+        return self.augment(img, depth, edge, gradient, masks, boxes, labels, plane_paras)
 
 
 class FastBaseTransform(torch.nn.Module):

@@ -47,8 +47,8 @@ class PlaneAnnoDataset(data.Dataset):
         Returns:
             tuple: Tuple (image, instances, depth).
         '''
-        image, instances, depth, edges = self.pull_item(index)
-        return image, instances, depth, edges
+        image, instances, depth, edges, gradients = self.pull_item(index)
+        return image, instances, depth, edges, gradients
 
     def pull_item(self, index):
         '''
@@ -73,6 +73,7 @@ class PlaneAnnoDataset(data.Dataset):
         img = cv2.resize(img,(640,480))
         height, width, _ = img.shape
 
+        # read depth
         depth_path = self.get_depth_path(file_name)
         depth = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED).astype(np.float32)
 
@@ -81,6 +82,11 @@ class PlaneAnnoDataset(data.Dataset):
         assert osp.exists(edge_path), 'Image path does not exist: {}'.format(edge_path)
         edge = cv2.imread(edge_path, cv2.IMREAD_GRAYSCALE).astype(np.float32)/255
         edge = 1.0 - cv2.resize(edge,(640,480))
+
+        # read gradient of an image
+        gradient = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        gradient = cv2.resize(gradient,(640,480))
+        gradient = cv2.Canny(gradient,50,100, 1)/255.0
 
         if self.has_pos:
             k_matrix = self.get_camera_matrix(file_name)
@@ -108,9 +114,9 @@ class PlaneAnnoDataset(data.Dataset):
 
         if self.transform is not None:
             if len(target) > 0:
-                img, depth, edge, masks, boxes, labels, plane_paras = self.transform(img, depth, edge, masks, boxes, labels, plane_paras)
+                img, depth, edge, gradient, masks, boxes, labels, plane_paras = self.transform(img, depth, edge, gradient, masks, boxes, labels, plane_paras)
             else:
-                img, depth, edge, _, _, _ = self.transform(img, depth, edge, np.zeros((1, height, width), dtype=np.float), np.array([[0, 0, 1, 1]]))
+                img, depth, edge, gradient, _, _, _ = self.transform(img, depth, edge, gradient, np.zeros((1, height, width), dtype=np.float), np.array([[0, 0, 1, 1]]))
                 masks = None
                 boxes = None
                 labels = None
@@ -122,7 +128,7 @@ class PlaneAnnoDataset(data.Dataset):
             print('Warning: Augmentation output an example with no ground truth. Resampling...')
             return self.pull_item(random.randint(0, len(self.ids)-1))
         
-        return torch.from_numpy(img).permute(2, 0, 1), instances, torch.from_numpy(depth).unsqueeze(dim=0) * cfg.dataset.depth_resolution, torch.from_numpy(edge).unsqueeze(dim=0)
+        return torch.from_numpy(img).permute(2, 0, 1), instances, torch.from_numpy(depth).unsqueeze(dim=0) * cfg.dataset.depth_resolution, torch.from_numpy(edge).unsqueeze(dim=0), torch.from_numpy(gradient).unsqueeze(dim=0)
     
     def __len__(self):
         return len(self.ids)
@@ -277,6 +283,7 @@ def detection_collate(batch):
     imgs = []
     depths = []
     edges = []
+    gradients = []
     instances = []
 
     for sample in batch:
@@ -284,17 +291,18 @@ def detection_collate(batch):
         instances.append(sample[1])
         depths.append(sample[2])
         edges.append(sample[3])
+        gradients.append(sample[4])
 
-    return imgs, instances, depths, edges
+    return imgs, instances, depths, edges, gradients
 
 
-def enforce_size(img, depth, edge, instances, new_w, new_h):
+def enforce_size(img, depth, edge, gradient, instances, new_w, new_h):
     """ Ensures that the image is the given size without distorting aspect ratio. """
     with torch.no_grad():
         _, h, w = img.size()
 
         if h == new_h and w == new_w:
-            return img, depth, edge, instances
+            return img, depth, edge, gradient, instances
         
         # Resize the image so that it fits within new_w, new_h
         w_prime = new_w
@@ -317,6 +325,9 @@ def enforce_size(img, depth, edge, instances, new_w, new_h):
         edge = F.interpolate(edge.unsqueeze(0), (h_prime, w_prime), mode='bilinear', align_corners=False)
         edge.squeeze_(0)
 
+        gradient = F.interpolate(gradient.unsqueeze(0), (h_prime, w_prime), mode='bilinear', align_corners=False)
+        gradient.squeeze_(0)
+
         # Act like each object is a color channel
         instances['masks'] = F.interpolate(instances['masks'].unsqueeze(0), (h_prime, w_prime), mode='bilinear', align_corners=False)
         instances['masks'].squeeze_(0)
@@ -330,9 +341,11 @@ def enforce_size(img, depth, edge, instances, new_w, new_h):
         img   = F.pad(  img, pad_dims, mode='constant', value=0)
         depth = F.pad(depth, pad_dims, mode='constant', value=0)
         edge = F.pad(edge, pad_dims, mode='constant', value=0)
+        gradient = F.pad(gradient, pad_dims, mode='constant', value=0)
+
         instances['masks'] = F.pad(instances['masks'], pad_dims, mode='constant', value=0)
 
-        return img, depth, edge, instances
+        return img, depth, edge, gradient, instances
 
 
 # Just for testing

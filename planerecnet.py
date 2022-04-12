@@ -14,6 +14,7 @@ from models.functions.funcs import bias_init_with_prob
 from models.fpn import FPN
 from models.backbone import construct_backbone
 from data.augmentations import FastBaseTransform
+from network.fusion import Fusion
 from edge_stream import GSCNN
 
 
@@ -71,17 +72,18 @@ class PlaneRecNet(nn.Module):
 
         # GSCNN
         self.gscnn = GSCNN()
+        self.fusion = Fusion()
     
-    def forward(self, x):
+    def forward(self, x, gradient):
 
         # Backbone
         with timer.env("backbone"):
             features_encoder = self.backbone(x)
-            #for i in features: print(i.shape)
 
         # apply edge detection there
         with timer.env("edge"):
-            edge = self.gscnn(features_encoder)
+            edge, attention_mask = self.gscnn(features_encoder, gradient)
+
         # Feature Pyramid Network
         with timer.env("fpn"):
             features = self.fpn([features_encoder[i] for i in self.fpn_indices])
@@ -96,18 +98,18 @@ class PlaneRecNet(nn.Module):
         with timer.env('mask head'):
             mask_features = [features[f] for f in range(len(self.mask_in_features))]
             mask_pred = self.mask_head(mask_features)
+            mask_pred = self.fusion(mask_pred, attention_mask)
 
-        # Inference or output for trainng
+        # Inference or output for training
         with timer.env('Inferencing'):
             if self.training:
-                #mask_feat_size = mask_pred.size()[-2:]
                 return mask_pred, cate_pred, kernel_pred, edge
             else:
                 # point nms.
                 cate_pred = [point_nms(cate_p.sigmoid(), kernel=2).permute(0, 2, 3, 1)
                             for cate_p in cate_pred]
                 # do inference for results.
-                results = self.inference(mask_pred, cate_pred, kernel_pred, edge, x)
+                results = self.inference(mask_pred, cate_pred, kernel_pred, attention_mask, x)
 
                 return results
     
