@@ -397,7 +397,7 @@ def train():
                     # log losses to tensorboard
                     if not args.no_tensorboard: 
                         log_losses(writer, losses, iteration)
-                        if iteration % 200 == 0 and iteration > 0:
+                        if iteration % 5000 == 0 and iteration > 0:
                             log_visual_example(prn_net, val_dataset, writer, iteration)
                     if iteration % 100 == 0:
                         # print losses(moving averaged) to console
