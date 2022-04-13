@@ -168,10 +168,10 @@ def inference_image(net: PlaneRecNet, path: str, save_path: str = None):
         
     cv2.imwrite(save_path, blended_frame)
     from torchvision.utils import save_image
-    save_image(edge.data, edge_path)
+    save_image(1.0 - torch.from_numpy(edge), edge_path)
     
    
-def inference_images(net: PlaneRecNet, in_folder: str, out_folder: str, max_img: int=0, depth_mode: str='colored'):
+def inference_images(net: PlaneRecNet, in_folder: str, out_folder: str, max_img: int=0):
     if not os.path.exists(out_folder):
         os.mkdir(out_folder)
     print()
@@ -347,14 +347,14 @@ if __name__ == "__main__":
         if ':' in args.image:
             inp, out = args.image.split(':')
             print('Inference image: {}'.format(inp))
-            inference_image(net, inp, out, depth_mode=args.depth_mode)
+            inference_image(net, inp, out)
         else:
             print('Inference image: {}'.format(args.image))
-            inference_image(net, args.image, depth_mode=args.depth_mode)
+            inference_image(net, args.image)
     
     if args.images is not None:
         inp, out = args.images.split(':')
-        inference_images(net, inp, out, max_img=args.max_img, depth_mode=args.depth_mode)
+        inference_images(net, inp, out, max_img=args.max_img)
     if args.ibims1 is not None:
         inp, out = args.ibims1.split(':')
         ibims1(net, inp, out)
