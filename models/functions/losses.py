@@ -12,8 +12,6 @@ class PlaneRecNetLoss(nn.Module):
     Compute Targets:
         1) Classification loss
         2) Segmentation loss
-        3) Depth estimation loss
-        4) Depth gradient loss for enhance segmentation
         5) Planar surface normal loss for enhance depth estimation
     """
 
@@ -45,12 +43,10 @@ class PlaneRecNetLoss(nn.Module):
         # Losses funcs
         self.inst_loss = DiceLoss()
         self.conf_loss = SigmoidFocalLoss(gamma=self.focal_loss_gamma, alpha=self.focal_loss_alpha, reduction="sum")
-        self.point_wise_depth_loss = RMSElogLoss(reduction="mean")
         self.depth_constraint_inst_loss = LavaLoss()
-        self.vnl = VNL_Loss((480,640))
         
 
-    def forward(self, net, mask_preds, cate_preds, kernel_preds, depth_preds, gt_instances, gt_depths):
+    def forward(self, net, mask_preds, cate_preds, kernel_preds, gt_instances, gt_depths):
         """
 
         """ 
@@ -139,34 +135,6 @@ class PlaneRecNetLoss(nn.Module):
         loss_cate = self.conf_loss_weight * self.conf_loss(flatten_cate_preds, flatten_cate_labels_oh) / (num_ins + 1)
         losses['cat'] = loss_cate
 
-
-        # Point-wise Depth Loss
-        gt_depths = Variable(gt_depths, requires_grad=False)
-        depth_preds = F.interpolate(depth_preds, scale_factor=2, mode='bilinear', align_corners=False)
-        valid_mask = (gt_depths > cfg.dataset.min_depth) # All ground truth >= min depth are considered as invalid/non-informative pixels
-        gt_depths.clamp(max=cfg.dataset.max_depth)
-        loss_depth = self.depth_loss_weight * self.point_wise_depth_loss(depth_preds, gt_depths, valid_mask)
-        losses['dpt'] = loss_depth
-
-        
-        # Plane Surface Normal Constraint Depth Estimation Loss
-        if cfg.use_plane_loss:
-            loss_plane = []
-            B = len(gt_instances)
-            intrinsic_matrix = torch.stack([gt_instances[img_idx]['k_matrix'] for img_idx in range(len(gt_instances))], dim=0)
-            for img_idx in range(0, B):
-                gt_masks = gt_instances[img_idx]['masks'].bool()
-                gt_planes = gt_instances[img_idx]['plane_paras']
-                gt_depth = gt_depths[img_idx]
-                gt_plane_normals = gt_planes[:, :3]
-                gt_plane_offsets = gt_planes[:, 3]
-                k_matrix = intrinsic_matrix[img_idx]
-                loss_plane_per_frame = self.vnl(depth_preds[img_idx], gt_masks, gt_plane_normals, gt_depth, k_matrix)
-                loss_plane.append(loss_plane_per_frame)
-            loss_plane_mean = torch.stack(loss_plane).mean()
-            losses['pln'] = loss_plane_mean * self.pln_loss_weight
-            
-            
         # Depth Gradient Constraint Instance Segmentation Loss
         if cfg.use_lava_loss:
             loss_lava = []
@@ -177,7 +145,7 @@ class PlaneRecNetLoss(nn.Module):
             if self.dataset_name == 'Stanford 2D3DS':
                 # dilate the valid mask, to filter out invalid gradient values
                 valid_mask = gt_depths>0
-                dilate_kernel = torch.autograd.Variable(torch.ones((1, 1, 5, 5)).cuda()) 
+                dilate_kernel = torch.autograd.Variable(torch.ones((1, 1, 5, 5)).cuda(0)) 
                 invalid_mask = valid_mask.logical_not().float()
                 dilate_valid_mask = F.conv2d(invalid_mask, dilate_kernel, padding=2).bool().logical_not()
                 valid_mask = dilate_valid_mask
@@ -312,13 +280,13 @@ def compute_gradient_map(depth_map, valid_mask=None):
                             [2, 0, -2],
                             [1, 0, -1]])
     sobel_x = sobel_x.view((1, 1, 3, 3))
-    sobel_x = torch.autograd.Variable(sobel_x.cuda())
+    sobel_x = torch.autograd.Variable(sobel_x.cuda(0))
 
     sobel_y = torch.Tensor([[1, 2, 1],
                             [0, 0, 0],
                             [-1, -2, -1]])
     sobel_y = sobel_y.view((1, 1, 3, 3))
-    sobel_y = torch.autograd.Variable(sobel_y.cuda())
+    sobel_y = torch.autograd.Variable(sobel_y.cuda(0))
     
     depth_map_padded = F.pad(depth_map, pad=(1,1,1,1), mode='reflect') # Don't use zero padding mode, you know why.
     gx = F.conv2d(depth_map_padded, (1.0 / 8.0) * sobel_x, padding=0)

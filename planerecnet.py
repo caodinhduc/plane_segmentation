@@ -92,23 +92,19 @@ class PlaneRecNet(nn.Module):
         with timer.env('mask head'):
             mask_features = [features[f] for f in range(len(self.mask_in_features))]
             mask_pred = self.mask_head(mask_features)
-        
-                # Depth Decoding
-        with timer.env("depth_decoder"):
-            depth_pred = self.depth_decoder([features_encoder[i] for i in self.depth_decoder_indices], mask_pred, kernel_pred)
 
         # Inference or output for trainng
         with timer.env('Inferencing'):
             if self.training:
                 #mask_feat_size = mask_pred.size()[-2:]
             
-                return mask_pred, cate_pred, kernel_pred, depth_pred
+                return mask_pred, cate_pred, kernel_pred
             else:
                 # point nms.
                 cate_pred = [point_nms(cate_p.sigmoid(), kernel=2).permute(0, 2, 3, 1)
                             for cate_p in cate_pred]
                 # do inference for results.
-                results = self.inference(mask_pred, cate_pred, kernel_pred, depth_pred, x)
+                results = self.inference(mask_pred, cate_pred, kernel_pred, x)
 
                 return results
 
@@ -154,7 +150,7 @@ class PlaneRecNet(nn.Module):
                 module.weight.requires_grad = enable
                 module.bias.requires_grad = enable
 
-    def inference(self, pred_masks, pred_cates, pred_kernels, pred_depths, batched_images):
+    def inference(self, pred_masks, pred_cates, pred_kernels, batched_images):
         assert len(pred_cates) == len(pred_kernels)
 
         results = []
@@ -174,18 +170,14 @@ class PlaneRecNet(nn.Module):
 
             pred_cate = torch.cat(pred_cate, dim=0)
             pred_kernel = torch.cat(pred_kernel, dim=0)
-            pred_depth = pred_depths[img_idx, ...].unsqueeze(0)
 
             # inference for single image.
-            result = self.inference_single_image(pred_mask, pred_cate, pred_kernel, pred_depth, ori_size)
+            result = self.inference_single_image(pred_mask, pred_cate, pred_kernel, ori_size)
             results.append(result)
         return results
 
-    def inference_single_image(self, seg_preds, cate_preds, kernel_preds, depth_pred, ori_size):
-        result = {'pred_masks': None, 'pred_boxes': None, 'pred_classes': None, 'pred_scores': None, 'pred_depth': None,}
-
-        # depth interpolation
-        result['pred_depth'] = F.interpolate(depth_pred, size=ori_size, mode='bilinear', align_corners=False).detach()
+    def inference_single_image(self, seg_preds, cate_preds, kernel_preds, ori_size):
+        result = {'pred_masks': None, 'pred_boxes': None, 'pred_classes': None, 'pred_scores': None}
         
         # process.
         inds = (cate_preds > self.score_threshold)
@@ -646,9 +638,9 @@ if __name__ == "__main__":
         print(cfg.backbone.name)
         
     net.eval()
-    net = net.cuda()
+    net = net.cuda(0)
     torch.set_default_tensor_type("torch.cuda.FloatTensor")
-    frame = torch.from_numpy(cv2.imread("data/example_nyu.jpg", cv2.IMREAD_COLOR)).cuda().float()
+    frame = torch.from_numpy(cv2.imread("data/example_nyu.jpg", cv2.IMREAD_COLOR)).cuda(0).float()
     batch = FastBaseTransform()(frame.unsqueeze(0))
     y = net(batch)
     

@@ -52,6 +52,19 @@ parser.add_argument('--no_autoscale', dest='autoscale', action='store_false',
 parser.add_argument('--reproductablity', dest='reproductablity', action='store_true',
                     help='Set this if you want to reproduct the almost same results as given in the ablation study.')                
 
+
+# Set path for training
+parser.add_argument('--train_images', default='../stanford/s2d3ds_plane_anno/pre/images', type=str,
+                    help='train images folder')
+parser.add_argument('--train_info', default='../stanford/s2d3ds_plane_anno/pre/s2d3ds_train.json', type=str,
+                    help='train annotation file')
+
+parser.add_argument('--valid_images', default='../stanford/s2d3ds_plane_anno/pre/images_val', type=str,
+                    help='valid images folder')
+parser.add_argument('--valid_info', default='../stanford/s2d3ds_plane_anno/pre/s2d3ds_val.json', type=str,
+                    help='valid annotation file')
+
+
 # Hyper Parameters for Training
 parser.add_argument('--batch_size', default=8, type=int,
                     help='Batch size for training')
@@ -117,7 +130,7 @@ if args.batch_size // torch.cuda.device_count() < 6:
         print('Per-GPU batch size is less than the recommended limit for batch norm. Disabling batch norm.')
     cfg.freeze_bn = True
 
-loss_types = ['ins', 'lav', 'cat', 'dpt', 'pln']
+loss_types = ['ins', 'lav', 'cat']
 
 if torch.cuda.is_available():
     torch.set_default_tensor_type('torch.cuda.FloatTensor')
@@ -145,8 +158,8 @@ class NetLoss(nn.Module):
         Returns:
             - losses: a dict, losses from PlaneRecNet
         """
-        mask_pred, cate_pred, kernel_pred, depth_pred = self.net(batched_images)
-        losses = self.criterion(self.net, mask_pred, cate_pred, kernel_pred, depth_pred, batched_gt_instances, batched_gt_depths)
+        mask_pred, cate_pred, kernel_pred = self.net(batched_images)
+        losses = self.criterion(self.net, mask_pred, cate_pred, kernel_pred, batched_gt_instances, batched_gt_depths)
         return losses
 
 
@@ -156,10 +169,10 @@ class CustomDataParallel(nn.DataParallel):
     It should also be faster than the general case.
     
     """
-    def scatter(self, inputs, kwargs, device_ids):
+    def scatter(self, inputs, kwargs, device_ids=[0]):
         # More like scatter and data prep at the same time. The point is we prep the data in such a way
         # that no scatter is necessary, and there's no need to shuffle stuff around different GPUs.
-        devices = ['cuda:' + str(x) for x in device_ids]
+        devices = ['cuda:0']
         splits = self.prepare_data(inputs[0], devices, allocation=args.batch_alloc)
 
         return [[split[device_idx] for split in splits] for device_idx in range(len(devices))], \
@@ -217,13 +230,13 @@ def train():
     if not os.path.exists(args.save_folder):
         os.mkdir(args.save_folder)
 
-    dataset = eval(cfg.dataset.name)(image_path=cfg.dataset.train_images,
-                            anno_file=cfg.dataset.train_info,
+    dataset = eval(cfg.dataset.name)(image_path=args.train_images,
+                            anno_file=args.train_info,
                             transform=SSDAugmentation(MEANS))
 
     setup_eval()
-    val_dataset = eval(cfg.dataset.name)(image_path=cfg.dataset.valid_images,
-                            anno_file=cfg.dataset.valid_info,
+    val_dataset = eval(cfg.dataset.name)(image_path=args.valid_images,
+                            anno_file=args.valid_info,
                             transform=BaseTransform(MEANS))
 
     # cfg.use_plane_loss = False 
@@ -265,11 +278,11 @@ def train():
             exit(-1)
     
     net = CustomDataParallel(NetLoss(net, criterion))
-    net = net.cuda()
+    net = net.cuda(0)
 
     # Initialize everything
     if not cfg.freeze_bn: prn_net.freeze_bn() # Freeze bn so we don't kill our means
-    prn_net(torch.zeros(1, 3, cfg.max_size, cfg.max_size).cuda())
+    prn_net(torch.zeros(1, 3, cfg.max_size, cfg.max_size).cuda(0))
     if not cfg.freeze_bn: prn_net.freeze_bn(True)
 
     # Initialize TensorBoardX Writer
@@ -291,7 +304,7 @@ def train():
     data_loader = torch.utils.data.DataLoader(dataset, args.batch_size,
                                   num_workers=args.num_workers,
                                   shuffle=True, collate_fn=detection_collate,
-                                  generator=torch.Generator(device='cuda'),
+                                  generator=torch.Generator(device='cuda:0'),
                                   pin_memory=True) # Add generator=torch.Generator(device='cuda') for pytorch >= 1.9
     
     save_path = lambda epoch, iteration: SavePath(cfg.name, epoch, iteration).get_path(root=args.save_folder)
@@ -371,7 +384,7 @@ def train():
                     # log losses to tensorboard
                     if not args.no_tensorboard: 
                         log_losses(writer, losses, iteration)
-                        if iteration % 5000 == 0 and iteration > 0:
+                        if iteration % 500 == 0 and iteration > 0:
                             log_visual_example(prn_net, val_dataset, writer, iteration)
                     if iteration % 100 == 0:
                         # print losses(moving averaged) to console

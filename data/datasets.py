@@ -69,7 +69,6 @@ class PlaneAnnoDataset(data.Dataset):
         assert osp.exists(path), 'Image path does not exist: {}'.format(path)
 
         img = cv2.imread(path).astype(np.float32)
-        img = cv2.resize(img,(640,480))
         height, width, _ = img.shape
 
         depth_path = self.get_depth_path(file_name)
@@ -131,7 +130,7 @@ class PlaneAnnoDataset(data.Dataset):
         img_id = self.ids[index]
         path = self.coco.loadImgs(img_id)[0]['file_name']
         img = cv2.imread(osp.join(self.root, path), cv2.IMREAD_COLOR)
-        return cv2.resize(img,(640,480))
+        return img
     
     def pull_depth(self, index):
         '''Returns the original depth map object at index in uint16
@@ -237,7 +236,6 @@ class S2D3DSDataset(PlaneAnnoDataset):
         depth_root = self.root.replace("images", "depths")
         depth_file_name = rgb_file_name.replace("rgb", "depth").replace(".jpg", ".png")
         depth_path = osp.join(depth_root, depth_file_name)
-        print(depth_path)
         return depth_path
     
     def get_camera_matrix(self, rgb_file_name):
@@ -364,7 +362,7 @@ if __name__ == "__main__":
 
     for idx, data_ele in enumerate(data_loader):
         imgs, gt_instances, gt_depths = data_ele
-        intrinsic_matrix = torch.stack([gt_instances[img_idx]['k_matrix'] for img_idx in range(len(gt_instances))], dim=0).cuda()
+        intrinsic_matrix = torch.stack([gt_instances[img_idx]['k_matrix'] for img_idx in range(len(gt_instances))], dim=0).cuda(0)
         gt_depths = torch.stack([gt_depths[img_idx] for img_idx in range(len(gt_depths))], dim=0)
         intrinsic_inv = torch.inverse(intrinsic_matrix).float().to("cuda") # (B, 4, 4)
         point_clouds = get_points_coordinate(gt_depths.permute(0,2,3,1).to("cuda"), instrinsic_inv=intrinsic_inv)
@@ -372,8 +370,8 @@ if __name__ == "__main__":
         for i in range(len(imgs)):
             inst = gt_instances[i]
             masks = inst['masks']
-            offsets = inst['plane_paras'][:,3:].cuda().double()
-            normals = inst['plane_paras'][:,:3].cuda().double()
+            offsets = inst['plane_paras'][:,3:].cuda(0).double()
+            normals = inst['plane_paras'][:,:3].cuda(0).double()
             total = 0
             print("gt masks: {}, gt planes: {}".format(masks.shape, inst['plane_paras'].shape))
             error = 0
