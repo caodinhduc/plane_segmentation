@@ -341,7 +341,7 @@ if __name__ == "__main__":
     
     if args.images is not None:
         inp, out = args.images.split(':')
-        inference_images(net, inp, out, max_img=args.max_img, depth_mode=args.depth_mode)
+        inference_images(net, inp, out, max_img=args.max_img)
     if args.ibims1 is not None:
         inp, out = args.ibims1.split(':')
         ibims1(net, inp, out)
