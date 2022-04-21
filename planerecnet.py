@@ -178,6 +178,9 @@ class PlaneRecNet(nn.Module):
 
     def inference_single_image(self, seg_preds, cate_preds, kernel_preds, ori_size):
         result = {'pred_masks': None, 'pred_boxes': None, 'pred_classes': None, 'pred_scores': None}
+
+        # add seg_preds for extract gradient
+        # result['seg_preds'] = seg_preds
         
         # process.
         inds = (cate_preds > self.score_threshold)
@@ -204,6 +207,17 @@ class PlaneRecNet(nn.Module):
         N, I = kernel_preds.shape
         kernel_preds = kernel_preds.view(N, I, 1, 1)
         seg_preds = F.conv2d(seg_preds, kernel_preds, stride=1).squeeze(0).sigmoid()
+
+        # # check gradient
+        # import os
+        # import numpy as np
+        # for i in range(252):
+        #     current_tensor = seg_preds[i, :, :].detach().cpu().numpy()
+        #     current_tensor = ((current_tensor - current_tensor.min()) / (current_tensor.max() - current_tensor.min()) * 255).astype(np.uint8)
+        #     current_tensor = cv2.Canny(current_tensor,50,100, 1)
+        #     tensor_color = cv2.applyColorMap(current_tensor, cv2.COLORMAP_VIRIDIS)
+        #     tensor_color_path = os.path.join('seg_preds_gradient', '{}.png'.format(i))
+        #     cv2.imwrite(tensor_color_path, tensor_color)
 
 
         # mask.

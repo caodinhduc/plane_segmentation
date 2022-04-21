@@ -40,7 +40,6 @@ def parse_args(argv=None):
     parser.add_argument('--top_k', default=100, type=int, help='Further restrict the number of predictions to parse')
     parser.add_argument("--nms_mode", default="matrix", type=str, choices=["matrix", "mask"], help='Choose NMS type from matrix and mask nms.')
     parser.add_argument('--score_threshold', default=0.15, type=float, help='Detections with a score under this threshold will not be considered.')
-    parser.add_argument("--depth_mode", default="colored", type=str, choices=["colored", "gray"], help='Choose visualization mode of depth map')
     parser.add_argument('--depth_shift', default=512, type=float, help='Depth shift')
     global args
     args = parser.parse_args(argv)
@@ -154,6 +153,17 @@ def inference_image(net: PlaneRecNet, path: str, save_path: str = None):
     frame = torch.from_numpy(frame_np).cuda(0).float()
     batch = FastBaseTransform()(frame.unsqueeze(0))
     results = net(batch)
+
+    # save tensor to image 
+    # seg_preds = results[0]['seg_preds'][0]
+    # pred_boxes = results[0]['pred_boxes']
+    # for i in range(128):
+    #     current_tensor = seg_preds[i, :, :].detach().cpu().numpy()
+    #     current_tensor = ((current_tensor - current_tensor.min()) / (current_tensor.max() - current_tensor.min()) * 255).astype(np.uint8)
+    #     current_tensor = cv2.Canny(current_tensor,50,100, 1)
+    #     tensor_color = cv2.applyColorMap(current_tensor, cv2.COLORMAP_VIRIDIS)
+    #     tensor_color_path = os.path.join('seg_preds_tensor', '{}.png'.format(i))
+    #     cv2.imwrite(tensor_color_path, tensor_color)
 
     blended_frame = display_on_frame(results[0], frame, no_mask=args.no_mask, no_box=args.no_box, no_text=args.no_text)
 
@@ -334,10 +344,10 @@ if __name__ == "__main__":
         if ':' in args.image:
             inp, out = args.image.split(':')
             print('Inference image: {}'.format(inp))
-            inference_image(net, inp, out, depth_mode=args.depth_mode)
+            inference_image(net, inp, out)
         else:
             print('Inference image: {}'.format(args.image))
-            inference_image(net, args.image, depth_mode=args.depth_mode)
+            inference_image(net, args.image)
     
     if args.images is not None:
         inp, out = args.images.split(':')
