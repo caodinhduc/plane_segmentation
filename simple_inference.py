@@ -156,11 +156,10 @@ def inference_image(net: PlaneRecNet, path: str, save_path: str = None):
 
     # save tensor to image 
     # seg_preds = results[0]['seg_preds'][0]
-    # pred_boxes = results[0]['pred_boxes']
+    # # pred_boxes = results[0]['pred_boxes']
     # for i in range(128):
     #     current_tensor = seg_preds[i, :, :].detach().cpu().numpy()
     #     current_tensor = ((current_tensor - current_tensor.min()) / (current_tensor.max() - current_tensor.min()) * 255).astype(np.uint8)
-    #     current_tensor = cv2.Canny(current_tensor,50,100, 1)
     #     tensor_color = cv2.applyColorMap(current_tensor, cv2.COLORMAP_VIRIDIS)
     #     tensor_color_path = os.path.join('seg_preds_tensor', '{}.png'.format(i))
     #     cv2.imwrite(tensor_color_path, tensor_color)

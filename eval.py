@@ -54,6 +54,10 @@ def parse_args(argv=None):
                         help='Do not output the status bar. This is useful for when piping to a file.')
     parser.add_argument('--dataset', default=None, type=str,
                         help='If specified, override the dataset specified in the config with this one (example: coco2017_dataset).')
+    parser.add_argument('--eval_images', default='../stanford/s2d3ds_plane_anno/pre/images_val', type=str,
+                        help='valid images folder')
+    parser.add_argument('--eval_info', default='100_coarse.json', type=str,
+                        help='valid annotation file')
 
     global args
     args = parser.parse_args(argv)
@@ -113,9 +117,9 @@ def evaluate(net: PlaneRecNet, dataset, during_training=False, eval_nums=-1):
                 print('\rProcessing Images  %s %6d / %6d (%5.2f%%)    %5.2f fps        '
                       % (repr(progress_bar), it+1, eval_nums, progress, fps), end='')
         calc_map(ap_data)
-        infos = np.asarray(infos, dtype=np.double)
-        infos = infos.sum(axis=0)/infos.shape[0]
-        print()
+        # infos = np.asarray(infos, dtype=np.double)
+        # infos = infos.sum(axis=0)/infos.shape[0]
+        # print()
 
     except KeyboardInterrupt:
         print('Stopping...')
@@ -335,6 +339,8 @@ if __name__ == '__main__':
     
     if args.dataset is not None:
         set_dataset(args.dataset)
+
+    print('cfg.dataset.name: ', cfg.dataset.name)
     
     with torch.no_grad():
         if not os.path.exists('results'):
@@ -342,7 +348,11 @@ if __name__ == '__main__':
         
         cudnn.fastest = True
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
-        dataset = eval(cfg.dataset.name)(cfg.dataset.eval_images, cfg.dataset.eval_info,transform=BaseTransform(MEANS), has_gt=cfg.dataset.has_gt, has_pos=cfg.dataset.has_pos)
+        dataset = eval(cfg.dataset.name)(args.eval_images, 
+                                        args.eval_info,
+                                        transform=BaseTransform(MEANS),
+                                        has_gt=cfg.dataset.has_gt,
+                                        has_pos=cfg.dataset.has_pos)
         print("Loading model...", end='')
         net = PlaneRecNet(cfg)
         net.load_weights(args.trained_model)

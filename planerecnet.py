@@ -208,13 +208,13 @@ class PlaneRecNet(nn.Module):
         kernel_preds = kernel_preds.view(N, I, 1, 1)
         seg_preds = F.conv2d(seg_preds, kernel_preds, stride=1).squeeze(0).sigmoid()
 
-        # # check gradient
+        # check gradient
         # import os
         # import numpy as np
-        # for i in range(252):
+        # for i in range(seg_preds.shape[0]):
         #     current_tensor = seg_preds[i, :, :].detach().cpu().numpy()
         #     current_tensor = ((current_tensor - current_tensor.min()) / (current_tensor.max() - current_tensor.min()) * 255).astype(np.uint8)
-        #     current_tensor = cv2.Canny(current_tensor,50,100, 1)
+        #     # current_tensor = cv2.Canny(current_tensor,50,100, 1)
         #     tensor_color = cv2.applyColorMap(current_tensor, cv2.COLORMAP_VIRIDIS)
         #     tensor_color_path = os.path.join('seg_preds_gradient', '{}.png'.format(i))
         #     cv2.imwrite(tensor_color_path, tensor_color)

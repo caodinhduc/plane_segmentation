@@ -409,7 +409,7 @@ def train():
 
             # This is done per epoch
             if args.validation_epoch > 0:
-                if epoch % args.validation_epoch == 0 and iteration > 0 and epoch < num_epochs-2:
+                if epoch % args.validation_epoch == 10 and iteration > 0 and epoch < num_epochs-2:
                 # no validation when iteration = 0 or when last epoch
                     compute_validation_metrics(epoch, iteration, prn_net, val_dataset, args.validation_size)
         

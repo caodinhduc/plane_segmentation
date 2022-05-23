@@ -249,7 +249,7 @@ class S2D3DSDataset(PlaneAnnoDataset):
         return k_matrix
 
     def get_plane_para(self, target):
-        return [list(np.array([obj['plane_paras'][0], obj['plane_paras'][1], obj['plane_paras'][2], obj['plane_paras'][3], obj['plane_paras'][4], obj['plane_paras'][5]])) for obj in target]
+        return [list(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])) for obj in target]
 
 
 def detection_collate(batch):
