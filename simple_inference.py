@@ -39,7 +39,7 @@ def parse_args(argv=None):
     # Inference Parameters
     parser.add_argument('--top_k', default=100, type=int, help='Further restrict the number of predictions to parse')
     parser.add_argument("--nms_mode", default="matrix", type=str, choices=["matrix", "mask"], help='Choose NMS type from matrix and mask nms.')
-    parser.add_argument('--score_threshold', default=0.25, type=float, help='Detections with a score under this threshold will not be considered.')
+    parser.add_argument('--score_threshold', default=0.15, type=float, help='Detections with a score under this threshold will not be considered.')
     parser.add_argument("--depth_mode", default="colored", type=str, choices=["colored", "gray"], help='Choose visualization mode of depth map')
     parser.add_argument('--depth_shift', default=512, type=float, help='Depth shift')
     global args
@@ -52,14 +52,14 @@ def display_on_frame(result, frame, mask_alpha=0.5, fps_str='', no_mask=False, n
     h, w, _ = frame.shape
 
     pred_scores = result["pred_scores"]
-    pred_edges = result['pred_edges'].squeeze()
     
     if pred_scores is None or pred_scores.shape[0] == 0:
-        return frame.byte().cpu().numpy(), pred_edges.cpu().numpy()
+        return frame.byte().cpu().numpy()
     
     pred_masks = result["pred_masks"].unsqueeze(-1)
     pred_boxes = result["pred_boxes"]
     pred_classes = result["pred_classes"]
+
     # print('pred_classes', pred_classes)
     num_dets = pred_scores.size()[0]
 
@@ -138,9 +138,9 @@ def display_on_frame(result, frame, mask_alpha=0.5, fps_str='', no_mask=False, n
             cv2.putText(frame_numpy, text_str, text_pt, font_face,
                         font_scale, text_color, font_thickness, cv2.LINE_AA)
                 
-        return frame_numpy, pred_edges.cpu().numpy()
+        return frame_numpy
     else:
-        return frame.byte().cpu().numpy(), pred_edges.cpu().numpy()
+        return frame.byte().cpu().numpy()
 
 
 def inference_image(net: PlaneRecNet, path: str, save_path: str = None):
@@ -156,19 +156,16 @@ def inference_image(net: PlaneRecNet, path: str, save_path: str = None):
     batch = FastBaseTransform()(frame.unsqueeze(0))
     results = net(batch)
 
-    blended_frame, edge = display_on_frame(results[0], frame, no_mask=args.no_mask, no_box=args.no_box, no_text=args.no_text)
+    blended_frame = display_on_frame(results[0], frame, no_mask=args.no_mask, no_box=args.no_box, no_text=args.no_text)
 
     if save_path is None:
         name, ext = os.path.splitext(path)
         save_path = name + '_seg' + ext
-        edge_path = name + '_edge.png'
     else:
         name, ext = os.path.splitext(save_path)
-        edge_path = name + '_edge.png'
         
     cv2.imwrite(save_path, blended_frame)
-    from torchvision.utils import save_image
-    save_image(1.0 - torch.from_numpy(edge), edge_path)
+
     
    
 def inference_images(net: PlaneRecNet, in_folder: str, out_folder: str, max_img: int=0):

@@ -3,3 +3,6 @@ weights/
 logs/
 .vscode/
 __pycache__/
+seg_preds_gradient/
+images/
+*.ipynb

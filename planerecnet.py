@@ -14,7 +14,6 @@ from models.functions.funcs import bias_init_with_prob
 from models.fpn import FPN
 from models.backbone import construct_backbone
 from data.augmentations import FastBaseTransform
-from edge_stream import GSCNN
 
 
 device = torch.device(cfg.device)
@@ -69,8 +68,6 @@ class PlaneRecNet(nn.Module):
         mask_shapes = [cfg.fpn.num_features for _ in range(len(cfg.solov2.masks_in_features))]
         self.mask_head = SOLOv2MaskHead(cfg, mask_shapes)
 
-        # GSCNN
-        self.gscnn = GSCNN()
     
     def forward(self, x):
 
@@ -79,9 +76,6 @@ class PlaneRecNet(nn.Module):
             features_encoder = self.backbone(x)
             #for i in features: print(i.shape)
 
-        # apply edge detection there
-        with timer.env("edge"):
-            edge = self.gscnn(features_encoder)
         # Feature Pyramid Network
         with timer.env("fpn"):
             features = self.fpn([features_encoder[i] for i in self.fpn_indices])
@@ -101,13 +95,13 @@ class PlaneRecNet(nn.Module):
         with timer.env('Inferencing'):
             if self.training:
                 #mask_feat_size = mask_pred.size()[-2:]
-                return mask_pred, cate_pred, kernel_pred, edge
+                return mask_pred, cate_pred, kernel_pred
             else:
                 # point nms.
                 cate_pred = [point_nms(cate_p.sigmoid(), kernel=2).permute(0, 2, 3, 1)
                             for cate_p in cate_pred]
                 # do inference for results.
-                results = self.inference(mask_pred, cate_pred, kernel_pred, edge, x)
+                results = self.inference(mask_pred, cate_pred, kernel_pred, x)
 
                 return results
     
@@ -153,7 +147,7 @@ class PlaneRecNet(nn.Module):
                 module.weight.requires_grad = enable
                 module.bias.requires_grad = enable
 
-    def inference(self, pred_masks, pred_cates, pred_kernels, pred_edges, batched_images):
+    def inference(self, pred_masks, pred_cates, pred_kernels, batched_images):
         assert len(pred_cates) == len(pred_kernels)
 
         results = []
@@ -175,15 +169,14 @@ class PlaneRecNet(nn.Module):
             pred_kernel = torch.cat(pred_kernel, dim=0)
 
 
-            pred_edge = pred_edges[img_idx, ...].unsqueeze(0)
+            # pred_edge = pred_edges[img_idx, ...].unsqueeze(0)
             # inference for single image.
-            result = self.inference_single_image(pred_mask, pred_cate, pred_kernel, pred_edge, ori_size)
+            result = self.inference_single_image(pred_mask, pred_cate, pred_kernel, ori_size)
             results.append(result)
         return results
 
-    def inference_single_image(self, seg_preds, cate_preds, kernel_preds, pred_edge, ori_size):
-        result = {'pred_masks': None, 'pred_boxes': None, 'pred_classes': None, 'pred_scores': None, 'pred_edges' : None,}
-        result['pred_edges'] = pred_edge.detach()
+    def inference_single_image(self, seg_preds, cate_preds, kernel_preds, ori_size):
+        result = {'pred_masks': None, 'pred_boxes': None, 'pred_classes': None, 'pred_scores': None}
 
         # process.
         inds = (cate_preds > self.score_threshold)
@@ -211,6 +204,16 @@ class PlaneRecNet(nn.Module):
         kernel_preds = kernel_preds.view(N, I, 1, 1)
         seg_preds = F.conv2d(seg_preds, kernel_preds, stride=1).squeeze(0).sigmoid()
 
+        # check gradient
+        # import os
+        # import numpy as np
+        # for i in range(seg_preds.shape[0]):
+        #     current_tensor = seg_preds[i, :, :].detach().cpu().numpy()
+        #     current_tensor = ((current_tensor - current_tensor.min()) / (current_tensor.max() - current_tensor.min()) * 255).astype(np.uint8)
+        #     # current_tensor = cv2.Canny(current_tensor,50,100, 1)
+        #     tensor_color = cv2.applyColorMap(current_tensor, cv2.COLORMAP_VIRIDIS)
+        #     tensor_color_path = os.path.join('seg_preds_gradient', '{}.png'.format(i))
+        #     cv2.imwrite(tensor_color_path, tensor_color)
 
         # mask.
         seg_masks = seg_preds > self.mask_threshold

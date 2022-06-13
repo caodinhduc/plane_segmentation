@@ -6,6 +6,9 @@ import cv2
 import numpy as np
 import math, random
 
+import warnings
+warnings.filterwarnings("ignore")
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -44,7 +47,7 @@ parser.add_argument('--start_iter', default=-1, type=int,
                          'determined from the file name.')
 parser.add_argument('--validation_size', default=2000, type=int,
                     help='The number of images to use for validation.')
-parser.add_argument('--validation_epoch', default=1, type=int,
+parser.add_argument('--validation_epoch', default=10, type=int,
                     help='Output validation information every n iterations. If -1, do no validation.')
 parser.add_argument('--no_tensorboard', dest='no_tensorboard', action='store_true',
                     help='Whether visualize training loss, validation loss and outputs with tensorboard.')
@@ -54,18 +57,18 @@ parser.add_argument('--reproductablity', dest='reproductablity', action='store_t
                     help='Set this if you want to reproduct the almost same results as given in the ablation study.')                
 
 # Set path for training
-parser.add_argument('--train_images', default='../scannet/used_filter_scans/', type=str,
+parser.add_argument('--train_images', default='../stanford/s2d3ds_plane_anno/pre/images_val', type=str,
                     help='train images folder')
-parser.add_argument('--train_info', default='scannet_train.json', type=str,
+parser.add_argument('--train_info', default='fine_312.json', type=str,
                     help='train annotation file')
-parser.add_argument('--train_edge', default='../scannet/edge/', type=str,
+parser.add_argument('--train_edge', default='../pidinet/test/eval_results/imgs_epoch_019/', type=str,
                     help='train edge folder')
 
-parser.add_argument('--valid_images', default='../scannet/used_filter_scans/', type=str,
+parser.add_argument('--valid_images', default='../stanford/s2d3ds_plane_anno/pre/images_val', type=str,
                     help='valid images folder')
-parser.add_argument('--valid_info', default='scannet_val.json', type=str,
+parser.add_argument('--valid_info', default='fine_59.json', type=str,
                     help='valid annotation file')
-parser.add_argument('--val_edge', default='../scannet/edge/', type=str,
+parser.add_argument('--val_edge', default='../pidinet/test/eval_results/imgs_epoch_019/', type=str,
                     help='val edge folder')
 
 
@@ -85,7 +88,7 @@ parser.add_argument('--gamma', default=None, type=float,
 # You might not need customize these
 parser.add_argument('--num_workers', default=2, type=int,
                     help='Number of workers used in dataloading')
-parser.add_argument('--save_interval', default=6250, type=int,
+parser.add_argument('--save_interval', default=5000, type=int,
                     help='The number of iterations between saving the model.')
 parser.add_argument('--keep_latest', dest='keep_latest', action='store_true',
                     help='Only keep the latest checkpoint instead of each one.')
@@ -162,9 +165,8 @@ class NetLoss(nn.Module):
         Returns:
             - losses: a dict, losses from PlaneRecNet
         """
-        batched_gt_edges = batched_gt_edges
-        mask_pred, cate_pred, kernel_pred, edge_pred = self.net(batched_images)
-        losses = self.criterion(self.net, mask_pred, cate_pred, kernel_pred, edge_pred, batched_gt_instances, batched_gt_depths, batched_gt_edges)
+        mask_pred, cate_pred, kernel_pred = self.net(batched_images)
+        losses = self.criterion(self.net, mask_pred, cate_pred, kernel_pred, batched_gt_instances, batched_gt_depths, batched_gt_edges)
         return losses
 
 
@@ -241,6 +243,7 @@ def train():
     if not os.path.exists(args.save_folder):
         os.mkdir(args.save_folder)
 
+    print(cfg.dataset.name)
     dataset = eval(cfg.dataset.name)(image_path=args.train_images,
                             anno_file=args.train_info,
                             edge_paths = args.train_edge,
@@ -396,7 +399,7 @@ def train():
                     # log losses to tensorboard
                     if not args.no_tensorboard: 
                         log_losses(writer, losses, iteration)
-                        if iteration % 5000 == 0 and iteration > 0:
+                        if iteration % 1000 == 0 and iteration > 0:
                             log_visual_example(prn_net, val_dataset, writer, iteration)
                     if iteration % 100 == 0:
                         # print losses(moving averaged) to console

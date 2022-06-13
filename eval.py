@@ -19,7 +19,7 @@ from tensorboardX import SummaryWriter
 
 from planerecnet import PlaneRecNet
 from models.functions.funcs import bbox_iou, mask_iou
-from data.datasets import PlaneAnnoDataset, detection_collate, ScanNetDataset, NYUDataset
+from data.datasets import PlaneAnnoDataset, detection_collate, ScanNetDataset, NYUDataset, S2D3DSDataset
 from data.config import set_cfg, set_dataset, cfg, MEANS
 from data.augmentations import BaseTransform
 from utils.utils import MovingAverage, ProgressBar, SavePath
@@ -55,12 +55,12 @@ def parse_args(argv=None):
     parser.add_argument('--dataset', default=None, type=str,
                         help='If specified, override the dataset specified in the config with this one (example: coco2017_dataset).')
 
-    parser.add_argument('--eval_images', default='../scannet/used_filter_scans/', type=str,
-                    help='eval images folder')
-    parser.add_argument('--eval_info', default='scannet_eval.json', type=str,
-                        help='eval annotation file')
-    parser.add_argument('--eval_edge', default='../scannet/edge/', type=str,
-                        help='eval edge folder')
+    parser.add_argument('--eval_images', default='../stanford/s2d3ds_plane_anno/pre/images_val', type=str,
+                        help='valid images folder')
+    parser.add_argument('--eval_info', default='fine_59.json', type=str,
+                        help='valid annotation file')
+    parser.add_argument('--eval_edge', default='../pidinet/test/eval_results/imgs_epoch_019/', type=str,
+                        help='val edge folder')
     parser.add_argument('--has_gt', default=True, type=bool)
     parser.add_argument('--has_pos', default=True, type=bool)
 
@@ -100,7 +100,7 @@ def evaluate(net: PlaneRecNet, dataset, during_training=False, eval_nums=-1):
 
             # TODO: this dict looping is not a good practice, python < 3.6 doesn't keep keys/values in same order as declared.
             gt_masks, gt_boxes, gt_classes, gt_planes, k_matrices = [v.cuda(0) for k, v in gt_instances.items()]
-            pred_masks, pred_boxes, pred_classes, pred_scores, pred_edges = [v for k, v in result.items()]
+            pred_masks, pred_boxes, pred_classes, pred_scores = [v for k, v in result.items()]
 
             if pred_masks is not None:
                 pred_masks = pred_masks.float()
@@ -149,11 +149,10 @@ def tensorborad_visual_log(net: PlaneRecNet, dataset, writer: SummaryWriter, ite
             batch = Variable(image.unsqueeze(0)).cuda(0)
 
             batched_result = net(batch) # if batch_size = 1, result = batched_result[0]
-            seg_on_frame_numpy, pred_edge = display_on_frame(batched_result[0], frame_tensor, mask_alpha=0.35)
+            seg_on_frame_numpy = display_on_frame(batched_result[0], frame_tensor, mask_alpha=0.35)
 
             seg_on_frame_numpy = cv2.cvtColor(seg_on_frame_numpy, cv2.COLOR_BGR2RGB)
             writer.add_image("seg/pred/{}".format(it), seg_on_frame_numpy, iteration, dataformats='HWC')
-            writer.add_image("edge/pred/{}".format(it), 1.0 - pred_edge, iteration, dataformats='HW')
 
     except KeyboardInterrupt:
         print('Stopping...')
@@ -307,6 +306,12 @@ def calc_map(ap_data):
     return all_maps
 
 def print_maps(all_maps):
+    # log to file
+    import json
+    with open('datalog.txt', 'a') as f:
+        json.dump(all_maps, f, ensure_ascii=False)
+
+
     # Warning: hacky
     def make_row(vals): return (' %5s |' * len(vals)) % tuple(vals)
     def make_sep(n): return ('-------+' * n)
@@ -353,6 +358,7 @@ if __name__ == '__main__':
     if args.dataset is not None:
         set_dataset(args.dataset)
     
+    print(cfg.dataset.name)
     with torch.no_grad():
         if not os.path.exists('results'):
             os.makedirs('results')

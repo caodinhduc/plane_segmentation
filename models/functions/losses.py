@@ -1,5 +1,7 @@
+from operator import index
 from turtle import forward
 from cv2 import threshold
+from numpy import indices
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -40,8 +42,9 @@ class PlaneRecNetLoss(nn.Module):
         self.conf_loss_weight = cfg.focal_weight
         self.depth_loss_weight = cfg.depth_weight
         self.lava_loss_weight = cfg.lava_weight
-        self.pln_loss_weight = cfg.pln_weight
-        self.edge_loss_weight = 20
+        # self.pln_loss_weight = cfg.pln_weight
+        self.edge_loss_weight = 2
+        self.mask_threshold = cfg.solov2.mask_thr
 
         self.depth_resolution = cfg.dataset.depth_resolution
         self.dataset_name = cfg.dataset.name
@@ -53,7 +56,7 @@ class PlaneRecNetLoss(nn.Module):
         self.edge_loss = EdgeLoss()
         
 
-    def forward(self, net, mask_preds, cate_preds, kernel_preds, edge_preds, gt_instances, gt_depths, gt_edges):
+    def forward(self, net, mask_preds, cate_preds, kernel_preds, gt_instances, gt_depths, gt_edges):
         """
         """ 
 
@@ -80,10 +83,12 @@ class PlaneRecNetLoss(nn.Module):
         # kernel_preds: batch x
         # generate masks
         ins_pred_list = []
+        e_pred_list = []
         ins_pred_batched_list = [torch.empty(0)]*len(mask_preds) 
-        for b_kernel_pred in kernel_preds:
+        for b_kernel_pred in kernel_preds: # [0, 1, 2, 3] ~ 4 towers
             b_mask_pred = []
-            for idx, kernel_pred in enumerate(b_kernel_pred):
+            e_mask_pred = []
+            for idx, kernel_pred in enumerate(b_kernel_pred): # idx [0, 1]
                 if kernel_pred.size()[-1] == 0:
                     continue
                 cur_ins_pred = mask_preds[idx, ...]
@@ -92,14 +97,44 @@ class PlaneRecNetLoss(nn.Module):
                 cur_ins_pred = cur_ins_pred.unsqueeze(0)
                 kernel_pred = kernel_pred.permute(1, 0).view(I, -1, 1, 1)
                 cur_ins_pred = F.conv2d(cur_ins_pred, kernel_pred, stride=1).view(-1, H, W)
-                # print('cur_ins_pred shape: ', cur_ins_pred.shape)
                 b_mask_pred.append(cur_ins_pred)
                 ins_pred_batched_list[idx] = torch.cat((ins_pred_batched_list[idx], cur_ins_pred), dim=0)
+
+                # manipulate the edge following the format of mask prediction
+                e_N = cur_ins_pred.size()[0] # cur_ins_pred: 4 x 160 x 160
+                cur_edge_pred = gt_edges[idx, ...]
+
+                
+                # filter by the box size
+                # edge_indices = cur_ins_pred > self.mask_threshold
+                # cur_edge_pred = cur_edge_pred * edge_indices
+
+                # check mask edge
+                import os
+                import numpy as np
+                import cv2
+                
+                # #---------------------------------------------------------------------------------------------------------------------
+                # current_tensor = cur_edge_pred.squeeze(0).detach().cpu().numpy()
+                # current_tensor = ((current_tensor - current_tensor.min()) / (current_tensor.max() - current_tensor.min()) * 255).astype(np.uint8)
+                # #     # current_tensor = cv2.Canny(current_tensor,50,100, 1)
+                # # tensor_color = cv2.applyColorMap(current_tensor, cv2.COLORMAP_VIRIDIS)
+                # tensor_color_path = os.path.join('edge_mask_check', '{}.png'.format(idx))
+                # cv2.imwrite(tensor_color_path, current_tensor)
+                # #--------------------------------------------------------------------------------------------------------------------
+
+                cur_edge_pred = cur_edge_pred.repeat(e_N, 1, 1)
+                e_mask_pred.append(cur_edge_pred)
+
+
             if len(b_mask_pred) == 0:
                 b_mask_pred = None
+                # e_pred_list = None
             else:
                 b_mask_pred = torch.cat(b_mask_pred, 0)
+                e_mask_pred = torch.cat(e_mask_pred, 0)
             ins_pred_list.append(b_mask_pred)
+            e_pred_list.append(e_mask_pred)
         
         ins_ind_labels = [
             torch.cat([ins_ind_labels_level_img.flatten()
@@ -110,17 +145,30 @@ class PlaneRecNetLoss(nn.Module):
 
         num_ins = flatten_ins_ind_labels.sum()
 
+
         # Instance Segmentation Loss
         loss_ins = [] # Yaxu: len(ins_pred_list) = tower levels
-        for input, target in zip(ins_pred_list, ins_labels):
+        for input, target, edge in zip(ins_pred_list, ins_labels, e_pred_list):
             if input is None:
                 continue
             input = torch.sigmoid(input) # batch x num mask x 120 x 160
-            loss_ins.append(self.inst_loss(input, target)) # apply dice loss
+            loss_ins.append(self.inst_loss(input, target, edge)) # apply dice loss
         loss_ins_mean = torch.cat(loss_ins).mean()
         loss_ins = loss_ins_mean * self.ins_loss_weight
         losses['ins'] = loss_ins
 
+
+        # Edge-laplacian Consistency loss
+        loss_edge = []
+        for input, target in zip(ins_pred_list, e_pred_list):
+            if input is None:
+                continue
+            input = torch.sigmoid(input)
+            loss_edge.append(self.edge_loss(input, target))
+        # loss_edge_mean = torch.cat(loss_edge).mean()
+        loss_edge_mean = torch.FloatTensor(loss_edge).mean()
+        loss_edge = loss_edge_mean * self.edge_loss_weight
+        losses['edge'] = loss_edge 
 
         # Classification Loss
         cate_labels = [
@@ -149,7 +197,7 @@ class PlaneRecNetLoss(nn.Module):
             if self.dataset_name == 'ScanNet':
                 valid_mask = torch.zeros_like(gt_depths)
                 valid_mask[:, :, 20:460, 20:620] = 1
-            if self.dataset_name == 'Stanford 2D3DS':
+            if self.dataset_name == 'S2D3DSDataset':
                 # dilate the valid mask, to filter out invalid gradient values
                 valid_mask = gt_depths>0
                 dilate_kernel = torch.autograd.Variable(torch.ones((1, 1, 5, 5)).cuda(0)) 
@@ -171,10 +219,8 @@ class PlaneRecNetLoss(nn.Module):
                 loss_lava = loss_lava_mean * self.lava_loss_weight
             else:
                 loss_lava = torch.tensor([0.])
-            losses['lav'] = loss_lava
-
-        # Edge Loss
-        losses['edge'] = self.edge_loss(edge_preds, gt_edges) * self.edge_loss_weight
+            # losses['lav'] = loss_lava
+            losses['lav'] = torch.tensor([0.])
         return losses
 
     @torch.no_grad()
@@ -330,22 +376,123 @@ class SigmoidFocalLoss(nn.Module):
 
         return loss
 
-
 class DiceLoss(nn.Module):
     def __init__(self):
         super(DiceLoss, self).__init__()
         pass
     
-    def forward(self, input, target):
+    def forward(self, input, target, edge):
+
+        pos_index = (edge >= 0.75)
+        neg_index = (edge < 0.75)
+        edge[pos_index] = 1.0
+        edge[neg_index] = 0.5
+
+
+        weight = torch.ones_like(input)
+        # add edge and handle the edge mask
+        weight[pos_index] = 5.0
+        input = input * weight
+        target = target * weight
+
         input = input.contiguous().view(input.size()[0], -1)
         target = target.contiguous().view(target.size()[0], -1).float()
-
+        
         a = torch.sum(input * target, 1)
         b = torch.sum(input * input, 1) + 0.001
         c = torch.sum(target * target, 1) + 0.001
         d = (2 * a) / (b + c)
         return 1 - d
 
+
+class EdgeLoss(nn.Module):
+    def __init__(self):
+        super(EdgeLoss, self).__init__()
+        w = 1
+        self.laplacian_kernel = torch.zeros((2*w+1, 2*w+1), dtype=torch.float32).reshape(1,1,2*w+1,2*w+1).requires_grad_(False) - 1
+        self.laplacian_kernel[0,0,w,w] = (2*w+1)*(2*w+1)-1
+        self.loss = nn.MSELoss()
+    def forward(self, input, target):
+        # C, H, W = input.size()
+        # target = F.interpolate(target,
+        #             size=input.size(),
+        #             mode='bilinear', align_corners=False)
+        laplacian = F.conv2d(input.unsqueeze(1), self.laplacian_kernel, padding=1).squeeze(1)
+        laplacian = torch.abs(laplacian).sigmoid()
+
+        # handle the margin
+        target[:, :, 0] = 1
+        target[:, :, -1] = 1
+        target[:, 0, :] = 1
+        target[:, -1, :] = 1
+
+        pos_index = (target >= 0.75)
+        neg_index = (target < 0.75)
+        target[pos_index] = 1
+        target[neg_index] = 0
+
+
+        import os
+        import cv2
+        import numpy as np
+        # for i in range(laplacian.shape[0]):
+        #     current_tensor = laplacian[i, :, :].detach().cpu().numpy()
+        #     current_tensor = ((current_tensor - current_tensor.min()) / (current_tensor.max() - current_tensor.min()) * 255).astype(np.uint8)
+        #     # current_tensor = cv2.Canny(current_tensor,50,100, 1)
+        #     tensor_color = cv2.applyColorMap(current_tensor, cv2.COLORMAP_VIRIDIS)
+        #     tensor_color_path = os.path.join('laplacian', '{}.png'.format(i))
+        #     cv2.imwrite(tensor_color_path, tensor_color)
+        
+        # for i in range(target.shape[0]):
+        #     current_tensor = target[i, :, :].detach().cpu().numpy()
+        #     current_tensor = ((current_tensor - current_tensor.min()) / (current_tensor.max() - current_tensor.min()) * 255).astype(np.uint8)
+        #     # current_tensor = cv2.Canny(current_tensor,50,100, 1)
+        #     tensor_color = cv2.applyColorMap(current_tensor, cv2.COLORMAP_VIRIDIS)
+        #     tensor_color_path = os.path.join('edge', '{}.png'.format(i))
+        #     cv2.imwrite(tensor_color_path, tensor_color)
+        
+        laplacian = laplacian.contiguous().view(laplacian.size()[0], -1)
+        target = target.contiguous().view(target.size()[0], -1).float()
+        
+        indices = laplacian > 0.5
+        laplacian = laplacian * indices
+        # sum = indices.sum()
+        # mean = laplacian.mean()
+        target = target * indices
+        # loss = torch.sqrt(self.loss(laplacian, target))
+        return torch.tensor(0.0)
+        return loss
+        # n, c, h, w = input.size()
+    
+        # log_p = input.transpose(1, 2).transpose(2, 3).contiguous().view(1, -1)
+        # target_t = target.transpose(1, 2).transpose(2, 3).contiguous().view(1, -1)
+        # target_trans = target_t.clone()
+
+        # pos_index = (target_t >= 0.5)
+        # neg_index = (target_t < 0.5)
+        # ignore_index=(target_t >1)
+
+        # target_trans[pos_index] = 1
+        # target_trans[neg_index] = 0
+
+        # pos_index = pos_index.data.cpu().numpy().astype(bool)
+        # neg_index = neg_index.data.cpu().numpy().astype(bool)
+        # ignore_index=ignore_index.data.cpu().numpy().astype(bool)
+
+        # weight = torch.Tensor(log_p.size()).fill_(0)
+        # weight = weight.cpu().detach().numpy()
+        # pos_num = pos_index.sum()
+        # neg_num = neg_index.sum()
+        # sum_num = pos_num + neg_num
+        # weight[pos_index] = neg_num*1.0 / sum_num
+        # weight[neg_index] = pos_num*1.0 / sum_num
+
+        # weight[ignore_index] = 0
+
+        # weight = torch.from_numpy(weight)
+        # weight = weight.cuda(0)
+        # loss = F.binary_cross_entropy_with_logits(log_p, target_t, weight, size_average=True)
+        # return torch.tensor([0.]) 
 
 class RMSElogLoss(nn.Module):
     def __init__(self, clamp_val=1e-9, reduction: str = "none"):
@@ -370,42 +517,7 @@ class RMSElogLoss(nn.Module):
 
         return loss
 
-class EdgeLoss(nn.Module):
-    def __init__(self, threshold=0.5):
-        super(EdgeLoss, self).__init__()
 
-    def forward(self, input, target):
-        n, c, h, w = input.size()
-    
-        log_p = input.transpose(1, 2).transpose(2, 3).contiguous().view(1, -1)
-        target_t = target.transpose(1, 2).transpose(2, 3).contiguous().view(1, -1)
-        target_trans = target_t.clone()
-
-        pos_index = (target_t >= 0.5)
-        neg_index = (target_t < 0.5)
-        ignore_index=(target_t >1)
-
-        target_trans[pos_index] = 1
-        target_trans[neg_index] = 0
-
-        pos_index = pos_index.data.cpu().numpy().astype(bool)
-        neg_index = neg_index.data.cpu().numpy().astype(bool)
-        ignore_index=ignore_index.data.cpu().numpy().astype(bool)
-
-        weight = torch.Tensor(log_p.size()).fill_(0)
-        weight = weight.cpu().detach().numpy()
-        pos_num = pos_index.sum()
-        neg_num = neg_index.sum()
-        sum_num = pos_num + neg_num
-        weight[pos_index] = neg_num*1.0 / sum_num
-        weight[neg_index] = pos_num*1.0 / sum_num
-
-        weight[ignore_index] = 0
-
-        weight = torch.from_numpy(weight)
-        weight = weight.cuda(0)
-        loss = F.binary_cross_entropy_with_logits(log_p, target_t, weight, size_average=True)
-        return loss
     
 
 

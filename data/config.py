@@ -162,12 +162,15 @@ S2D3DS_dataset = dataset_base.copy({
     'name': 'S2D3DSDataset',
 
     # Training images and annotations
-    'train_images': './S2D3DS/images/',
-    'train_info':   './S2D3DS/s2d3ds_train.json',
+    'train_images': '../stanford/s2d3ds_plane_anno/pre/images_val',
+    'train_info':   'fine_312.json',
 
     # Validation images and annotations.
-    'valid_images': './S2D3DS/images_val/',
-    'valid_info':   './S2D3DS/s2d3ds_val.json',
+    'valid_images': '../stanford/s2d3ds_plane_anno/pre/images_val',
+    'valid_info':   'fine_59.json',
+
+    'eval_images': '../stanford/s2d3ds_plane_anno/pre/images_val',
+    'eval_info':   'fine_59.json',
 
     # The ratio to convert depth pixel value to meter
     'depth_resolution': 1/512,
@@ -421,8 +424,8 @@ PlaneRecNet_base_config = Config(
         'augment': data_augment,
         
         # Training Settings
-        'max_iter': 250000,
-        'lr_steps': (62500, 100000),
+        'max_iter': 25000,
+        'lr_steps': (6250, 100000),
         # dw' = momentum * dw - lr * (grad + decay * w)
         'lr': 1e-4,
         'momentum': 0.9,
@@ -547,6 +550,7 @@ def set_cfg(config_name: str):
 
 def set_dataset(dataset_name: str):
     ''' Sets the dataset of the current config. '''
+    print(dataset_name)
     cfg.dataset = eval(dataset_name)
 
 
