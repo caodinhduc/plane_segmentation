@@ -6,3 +6,5 @@ images/
 __pycache__/
 seg_preds_gradient/
 .ipynb_checkpoints/
+*.txt
+*.ipynb

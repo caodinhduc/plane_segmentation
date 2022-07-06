@@ -225,6 +225,9 @@ class NYUDataset(PlaneAnnoDataset):
         depth_path = osp.join(depth_root, depth_file_name)
         return depth_path
 
+    def get_plane_para(self, target):
+        return [list(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])) for obj in target]
+
 
 class S2D3DSDataset(PlaneAnnoDataset):
 

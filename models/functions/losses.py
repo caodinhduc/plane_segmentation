@@ -164,7 +164,8 @@ class PlaneRecNetLoss(nn.Module):
                 loss_lava = loss_lava_mean * self.lava_loss_weight
             else:
                 loss_lava = torch.tensor([0.])
-            losses['lav'] = loss_lava
+            # losses['lav'] = loss_lava
+            losses['lav'] = torch.tensor([0.])
         return losses
 
     @torch.no_grad()

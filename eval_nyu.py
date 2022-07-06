@@ -54,9 +54,9 @@ def parse_args(argv=None):
                         help='Do not output the status bar. This is useful for when piping to a file.')
     parser.add_argument('--dataset', default=None, type=str,
                         help='If specified, override the dataset specified in the config with this one (example: coco2017_dataset).')
-    parser.add_argument('--eval_images', default='../stanford/s2d3ds_plane_anno/pre/images_val', type=str,
+    parser.add_argument('--eval_images', default='../nyuv2/nyu_images/', type=str,
                         help='valid images folder')
-    parser.add_argument('--eval_info', default='fine_100.json', type=str,
+    parser.add_argument('--eval_info', default='../nyuv2/nyu_eval.json', type=str,
                         help='valid annotation file')
 
     global args
