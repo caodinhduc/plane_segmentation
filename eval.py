@@ -57,7 +57,7 @@ def parse_args(argv=None):
 
     parser.add_argument('--eval_images', default='../stanford/s2d3ds_plane_anno/pre/images_val', type=str,
                         help='valid images folder')
-    parser.add_argument('--eval_info', default='fine_59.json', type=str,
+    parser.add_argument('--eval_info', default='fine_100.json', type=str,
                         help='valid annotation file')
     parser.add_argument('--eval_edge', default='../pidinet/test/eval_results/imgs_epoch_019/', type=str,
                         help='val edge folder')
@@ -166,7 +166,7 @@ def compute_segmentation_metrics(ap_data, gt_masks, gt_boxes, gt_classes, pred_m
     mask_iou_cache = mask_iou(pred_masks, gt_masks).cpu()
     bbox_iou_cache = bbox_iou(pred_boxes.float(), gt_boxes.float()).cpu()
 
-    indices = sorted(range(num_pred), key=lambda i: -pred_scores[i])
+    indices = sorted(range(num_pred), key=lambda i: -pred_scores[i]) #
 
     iou_types = [
         ('box', lambda i, j: bbox_iou_cache[i, j].item(),
@@ -174,6 +174,7 @@ def compute_segmentation_metrics(ap_data, gt_masks, gt_boxes, gt_classes, pred_m
         ('mask', lambda i, j: mask_iou_cache[i, j].item(),
         lambda i: pred_scores[i], indices)
     ]
+    # print(iou_types)
 
     ap_per_iou = []
 
@@ -193,6 +194,7 @@ def compute_segmentation_metrics(ap_data, gt_masks, gt_boxes, gt_classes, pred_m
                 max_match_idx = -1
                 for j in range(num_gt):
                     iou = iou_func(i, j)
+                    # print('iou: ', iou)
                     if iou > max_iou_found:
                         max_iou_found = iou
                         max_match_idx = j
@@ -303,15 +305,17 @@ def calc_map(ap_data):
     # Put in a prettier format so we can serialize it to json during training
     all_maps = {k: {j: round(u, 2) for j, u in v.items()}
                 for k, v in all_maps.items()}
+
+
+    # with open('datalog.txt', 'a') as f:
+    #     f.write(str(all_maps['mask'][50]) + '\n')
     return all_maps
 
 def print_maps(all_maps):
     # log to file
-    import json
-    with open('datalog.txt', 'a') as f:
-        json.dump(all_maps, f, ensure_ascii=False)
-
-
+    # import json
+    # with open('datalog.txt', 'a') as f:
+    #     json.dump(str(all_maps['mask'][50]) + ' ', f, indent=4, ensure_ascii=False)
     # Warning: hacky
     def make_row(vals): return (' %5s |' * len(vals)) % tuple(vals)
     def make_sep(n): return ('-------+' * n)
@@ -358,7 +362,6 @@ if __name__ == '__main__':
     if args.dataset is not None:
         set_dataset(args.dataset)
     
-    print(cfg.dataset.name)
     with torch.no_grad():
         if not os.path.exists('results'):
             os.makedirs('results')
@@ -383,3 +386,32 @@ if __name__ == '__main__':
             writer = SummaryWriter("")
             eval_nums = 3
             tensorborad_visual_log(net, dataset, writer, 0, eval_nums)
+
+    # EVALUATE SINGLE FILE IN JSON FOLDER
+    # from tqdm import tqdm
+    # with torch.no_grad():
+    #     if not os.path.exists('results'):
+    #         os.makedirs('results')
+        
+    #     cudnn.fastest = True
+    #     torch.set_default_tensor_type('torch.cuda.FloatTensor')
+    #     list_file = os.listdir('json')
+    #     net = PlaneRecNet(cfg)
+    #     net.load_weights(args.trained_model)
+    #     net.eval()
+    #     # print("done.")
+    #     net = net.cuda(0)
+    #     for i in tqdm(list_file):
+    #         with open('filelog.txt', 'a') as f:
+    #             f.write(str(i + '\n'))
+    #         dataset = eval(cfg.dataset.name)(args.eval_images, os.path.join('json', i), args.eval_edge, transform=BaseTransform(MEANS), has_gt=args.has_gt, has_pos=args.has_pos)
+    #         evaluate(net, dataset, during_training=False, eval_nums=args.max_images)
+
+    #         if args.autopsy:
+    #             begin_time = (datetime.datetime.now()).strftime("%d%m%Y%H%M%S")
+    #             logpath = os.path.join(args.log_folder, ("autopsy_" + begin_time + "_" + cfg.name))
+    #             if not os.path.exists(logpath):
+    #                 os.makedirs(logpath)
+    #             writer = SummaryWriter("")
+    #             eval_nums = 3
+    #             tensorborad_visual_log(net, dataset, writer, 0, eval_nums)

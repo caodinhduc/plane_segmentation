@@ -39,7 +39,7 @@ def parse_args(argv=None):
     # Inference Parameters
     parser.add_argument('--top_k', default=100, type=int, help='Further restrict the number of predictions to parse')
     parser.add_argument("--nms_mode", default="matrix", type=str, choices=["matrix", "mask"], help='Choose NMS type from matrix and mask nms.')
-    parser.add_argument('--score_threshold', default=0.15, type=float, help='Detections with a score under this threshold will not be considered.')
+    parser.add_argument('--score_threshold', default=0.25, type=float, help='Detections with a score under this threshold will not be considered.')
     parser.add_argument("--depth_mode", default="colored", type=str, choices=["colored", "gray"], help='Choose visualization mode of depth map')
     parser.add_argument('--depth_shift', default=512, type=float, help='Depth shift')
     global args

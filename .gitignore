@@ -6,3 +6,4 @@ __pycache__/
 seg_preds_gradient/
 images/
 *.ipynb
+*.txt

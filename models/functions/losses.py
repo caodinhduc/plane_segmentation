@@ -151,7 +151,7 @@ class PlaneRecNetLoss(nn.Module):
         for input, target, edge in zip(ins_pred_list, ins_labels, e_pred_list):
             if input is None:
                 continue
-            input = torch.sigmoid(input) # batch x num mask x 120 x 160
+            input = torch.sigmoid(input) # batch x num mask x 160 x 160
             loss_ins.append(self.inst_loss(input, target, edge)) # apply dice loss
         loss_ins_mean = torch.cat(loss_ins).mean()
         loss_ins = loss_ins_mean * self.ins_loss_weight
@@ -160,15 +160,15 @@ class PlaneRecNetLoss(nn.Module):
 
         # Edge-laplacian Consistency loss
         loss_edge = []
-        for input, target in zip(ins_pred_list, e_pred_list):
+        for input, target in zip(ins_pred_list, ins_labels):
             if input is None:
                 continue
             input = torch.sigmoid(input)
             loss_edge.append(self.edge_loss(input, target))
         # loss_edge_mean = torch.cat(loss_edge).mean()
         loss_edge_mean = torch.FloatTensor(loss_edge).mean()
-        loss_edge = loss_edge_mean * self.edge_loss_weight
-        losses['edge'] = loss_edge 
+        loss_edge_mean = loss_edge_mean * 2
+        losses['edge'] = loss_edge_mean 
 
         # Classification Loss
         cate_labels = [
@@ -380,20 +380,21 @@ class DiceLoss(nn.Module):
     def __init__(self):
         super(DiceLoss, self).__init__()
         pass
+
     
     def forward(self, input, target, edge):
+    # add edge and handle the edge mask
+        # pos_index = (edge >= 0.75)
+        # neg_index = (edge < 0.75)
+        # edge[pos_index] = 1.0
+        # edge[neg_index] = 0.5
 
-        pos_index = (edge >= 0.75)
-        neg_index = (edge < 0.75)
-        edge[pos_index] = 1.0
-        edge[neg_index] = 0.5
+        # weight = torch.ones_like(input)
+       
+        # weight[pos_index] = 5.0
+        # input = input * weight
+        # target = target * weight
 
-
-        weight = torch.ones_like(input)
-        # add edge and handle the edge mask
-        weight[pos_index] = 5.0
-        input = input * weight
-        target = target * weight
 
         input = input.contiguous().view(input.size()[0], -1)
         target = target.contiguous().view(target.size()[0], -1).float()
@@ -404,37 +405,47 @@ class DiceLoss(nn.Module):
         d = (2 * a) / (b + c)
         return 1 - d
 
-
+from pytorch3d.loss import chamfer_distance
 class EdgeLoss(nn.Module):
     def __init__(self):
         super(EdgeLoss, self).__init__()
         w = 1
         self.laplacian_kernel = torch.zeros((2*w+1, 2*w+1), dtype=torch.float32).reshape(1,1,2*w+1,2*w+1).requires_grad_(False) - 1
         self.laplacian_kernel[0,0,w,w] = (2*w+1)*(2*w+1)-1
-        self.loss = nn.MSELoss()
+        self.laplacian_kernel.cuda()
+        self.loss = nn.MSELoss().cuda()
     def forward(self, input, target):
-        # C, H, W = input.size()
-        # target = F.interpolate(target,
-        #             size=input.size(),
-        #             mode='bilinear', align_corners=False)
-        laplacian = F.conv2d(input.unsqueeze(1), self.laplacian_kernel, padding=1).squeeze(1)
-        laplacian = torch.abs(laplacian).sigmoid()
+        target = target.float()
+        target_boundary = F.conv2d(target.unsqueeze(1), self.laplacian_kernel, padding=1).squeeze(1)
+        input_boundary = F.conv2d(input.unsqueeze(1), self.laplacian_kernel, padding=1).squeeze(1)
 
-        # handle the margin
-        target[:, :, 0] = 1
-        target[:, :, -1] = 1
-        target[:, 0, :] = 1
-        target[:, -1, :] = 1
+        input = input_boundary.contiguous().view(input.size()[0], -1)
+        target = target_boundary.contiguous().view(target.size()[0], -1).float()
+        target = torch.abs(target)
+        input = torch.abs(input)
+        pos_index = (input >= 0.5)
+        # pos_index = pos_index.data.cpu().numpy().astype(bool)
+        input = input[pos_index]
+        target = target[pos_index]
 
-        pos_index = (target >= 0.75)
-        neg_index = (target < 0.75)
-        target[pos_index] = 1
-        target[neg_index] = 0
+        loss = self.loss(input, target)
+        return loss
+    
+        # # handle the margin
+        # target[:, :, 0] = 1
+        # target[:, :, -1] = 1
+        # target[:, 0, :] = 1
+        # target[:, -1, :] = 1
+
+        # pos_index = (target >= 0.75)
+        # neg_index = (target < 0.75)
+        # target[pos_index] = 1
+        # target[neg_index] = 0
 
 
-        import os
-        import cv2
-        import numpy as np
+        # import os
+        # import cv2
+        # import numpy as np
         # for i in range(laplacian.shape[0]):
         #     current_tensor = laplacian[i, :, :].detach().cpu().numpy()
         #     current_tensor = ((current_tensor - current_tensor.min()) / (current_tensor.max() - current_tensor.min()) * 255).astype(np.uint8)
@@ -451,48 +462,18 @@ class EdgeLoss(nn.Module):
         #     tensor_color_path = os.path.join('edge', '{}.png'.format(i))
         #     cv2.imwrite(tensor_color_path, tensor_color)
         
-        laplacian = laplacian.contiguous().view(laplacian.size()[0], -1)
-        target = target.contiguous().view(target.size()[0], -1).float()
+        # laplacian = laplacian.contiguous().view(laplacian.size()[0], -1)
+        # target = target.contiguous().view(target.size()[0], -1).float()
         
-        indices = laplacian > 0.5
-        laplacian = laplacian * indices
-        # sum = indices.sum()
-        # mean = laplacian.mean()
-        target = target * indices
+        # indices = laplacian > 0.5
+        # laplacian = laplacian * indices
+        # target = target * indices
         # loss = torch.sqrt(self.loss(laplacian, target))
-        return torch.tensor(0.0)
-        return loss
+        # return torch.tensor(0.0)
+        # return loss
         # n, c, h, w = input.size()
     
-        # log_p = input.transpose(1, 2).transpose(2, 3).contiguous().view(1, -1)
-        # target_t = target.transpose(1, 2).transpose(2, 3).contiguous().view(1, -1)
-        # target_trans = target_t.clone()
-
-        # pos_index = (target_t >= 0.5)
-        # neg_index = (target_t < 0.5)
-        # ignore_index=(target_t >1)
-
-        # target_trans[pos_index] = 1
-        # target_trans[neg_index] = 0
-
-        # pos_index = pos_index.data.cpu().numpy().astype(bool)
-        # neg_index = neg_index.data.cpu().numpy().astype(bool)
-        # ignore_index=ignore_index.data.cpu().numpy().astype(bool)
-
-        # weight = torch.Tensor(log_p.size()).fill_(0)
-        # weight = weight.cpu().detach().numpy()
-        # pos_num = pos_index.sum()
-        # neg_num = neg_index.sum()
-        # sum_num = pos_num + neg_num
-        # weight[pos_index] = neg_num*1.0 / sum_num
-        # weight[neg_index] = pos_num*1.0 / sum_num
-
-        # weight[ignore_index] = 0
-
-        # weight = torch.from_numpy(weight)
-        # weight = weight.cuda(0)
-        # loss = F.binary_cross_entropy_with_logits(log_p, target_t, weight, size_average=True)
-        # return torch.tensor([0.]) 
+ 
 
 class RMSElogLoss(nn.Module):
     def __init__(self, clamp_val=1e-9, reduction: str = "none"):

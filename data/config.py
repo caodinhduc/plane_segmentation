@@ -424,7 +424,7 @@ PlaneRecNet_base_config = Config(
         'augment': data_augment,
         
         # Training Settings
-        'max_iter': 25000,
+        'max_iter': 20000,
         'lr_steps': (6250, 100000),
         # dw' = momentum * dw - lr * (grad + decay * w)
         'lr': 1e-4,

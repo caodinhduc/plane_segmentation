@@ -47,7 +47,7 @@ parser.add_argument('--start_iter', default=-1, type=int,
                          'determined from the file name.')
 parser.add_argument('--validation_size', default=2000, type=int,
                     help='The number of images to use for validation.')
-parser.add_argument('--validation_epoch', default=10, type=int,
+parser.add_argument('--validation_epoch', default=5, type=int,
                     help='Output validation information every n iterations. If -1, do no validation.')
 parser.add_argument('--no_tensorboard', dest='no_tensorboard', action='store_true',
                     help='Whether visualize training loss, validation loss and outputs with tensorboard.')
@@ -59,21 +59,21 @@ parser.add_argument('--reproductablity', dest='reproductablity', action='store_t
 # Set path for training
 parser.add_argument('--train_images', default='../stanford/s2d3ds_plane_anno/pre/images_val', type=str,
                     help='train images folder')
-parser.add_argument('--train_info', default='fine_312.json', type=str,
+parser.add_argument('--train_info', default='merged_selected_1000.json', type=str,
                     help='train annotation file')
 parser.add_argument('--train_edge', default='../pidinet/test/eval_results/imgs_epoch_019/', type=str,
                     help='train edge folder')
 
 parser.add_argument('--valid_images', default='../stanford/s2d3ds_plane_anno/pre/images_val', type=str,
                     help='valid images folder')
-parser.add_argument('--valid_info', default='fine_59.json', type=str,
+parser.add_argument('--valid_info', default='fine_100.json', type=str,
                     help='valid annotation file')
 parser.add_argument('--val_edge', default='../pidinet/test/eval_results/imgs_epoch_019/', type=str,
                     help='val edge folder')
 
 
 # Hyper Parameters for Training
-parser.add_argument('--batch_size', default=8, type=int,
+parser.add_argument('--batch_size', default=2, type=int,
                     help='Batch size for training')
 parser.add_argument('--lr', '--learning_rate', default=None, type=float,
                     help='Initial learning rate. Leave as None to read this from the config.')
@@ -88,7 +88,7 @@ parser.add_argument('--gamma', default=None, type=float,
 # You might not need customize these
 parser.add_argument('--num_workers', default=2, type=int,
                     help='Number of workers used in dataloading')
-parser.add_argument('--save_interval', default=5000, type=int,
+parser.add_argument('--save_interval', default=4000, type=int,
                     help='The number of iterations between saving the model.')
 parser.add_argument('--keep_latest', dest='keep_latest', action='store_true',
                     help='Only keep the latest checkpoint instead of each one.')
