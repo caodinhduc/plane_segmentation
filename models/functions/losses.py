@@ -36,6 +36,7 @@ class PlaneRecNetLoss(nn.Module):
         self.depth_loss_weight = cfg.depth_weight
         self.lava_loss_weight = cfg.lava_weight
         self.pln_loss_weight = cfg.pln_weight
+        self.edge_loss_weight = 2
 
         self.depth_resolution = cfg.dataset.depth_resolution
         self.dataset_name = cfg.dataset.name
@@ -44,6 +45,7 @@ class PlaneRecNetLoss(nn.Module):
         self.inst_loss = DiceLoss()
         self.conf_loss = SigmoidFocalLoss(gamma=self.focal_loss_gamma, alpha=self.focal_loss_alpha, reduction="sum")
         self.depth_constraint_inst_loss = LavaLoss()
+        self.edge_loss = EdgeLoss()
         
 
     def forward(self, net, mask_preds, cate_preds, kernel_preds, gt_instances, gt_depths):
@@ -115,6 +117,18 @@ class PlaneRecNetLoss(nn.Module):
         loss_ins = loss_ins_mean * self.ins_loss_weight
         losses['ins'] = loss_ins
 
+
+        # Edge-laplacian Consistency loss
+        loss_edge = []
+        for input, target in zip(ins_pred_list, ins_labels):
+            if input is None:
+                continue
+            input = torch.sigmoid(input)
+            loss_edge.append(self.edge_loss(input, target))
+        # loss_edge_mean = torch.cat(loss_edge).mean()
+        loss_edge_mean = torch.FloatTensor(loss_edge).mean()
+        loss_edge_mean = loss_edge_mean * 2
+        losses['edge'] = loss_edge_mean 
 
         # Classification Loss
         cate_labels = [
@@ -337,6 +351,32 @@ class DiceLoss(nn.Module):
         c = torch.sum(target * target, 1) + 0.001
         d = (2 * a) / (b + c)
         return 1 - d
+
+
+class EdgeLoss(nn.Module):
+    def __init__(self):
+        super(EdgeLoss, self).__init__()
+        w = 1
+        self.laplacian_kernel = torch.zeros((2*w+1, 2*w+1), dtype=torch.float32).reshape(1,1,2*w+1,2*w+1).requires_grad_(False) - 1
+        self.laplacian_kernel[0,0,w,w] = (2*w+1)*(2*w+1)-1
+        self.laplacian_kernel.cuda()
+        self.loss = nn.MSELoss().cuda()
+    def forward(self, input, target):
+        target = target.float()
+        target_boundary = F.conv2d(target.unsqueeze(1), self.laplacian_kernel, padding=1).squeeze(1)
+        input_boundary = F.conv2d(input.unsqueeze(1), self.laplacian_kernel, padding=1).squeeze(1)
+
+        input = input_boundary.contiguous().view(input.size()[0], -1)
+        target = target_boundary.contiguous().view(target.size()[0], -1).float()
+        target = torch.abs(target)
+        input = torch.abs(input)
+        pos_index = (input >= 0.5)
+        # pos_index = pos_index.data.cpu().numpy().astype(bool)
+        input = input[pos_index]
+        target = target[pos_index]
+
+        loss = self.loss(input, target)
+        return loss
 
 
 class RMSElogLoss(nn.Module):
