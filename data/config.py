@@ -474,7 +474,7 @@ PlaneRecNet_base_config = Config(
         # Image Size
         'max_size': 640,
         # Device
-        'device': 'cuda',
+        'device': 'cuda:0',
         # Whether or not to preserve aspect ratio when resizing the image.
         # If True, this will resize all images to be max_size^2 pixels in area while keeping aspect ratio.
         # If False, all images are resized to max_size x max_size

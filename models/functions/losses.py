@@ -359,8 +359,8 @@ class EdgeLoss(nn.Module):
         w = 1
         self.laplacian_kernel = torch.zeros((2*w+1, 2*w+1), dtype=torch.float32).reshape(1,1,2*w+1,2*w+1).requires_grad_(False) - 1
         self.laplacian_kernel[0,0,w,w] = (2*w+1)*(2*w+1)-1
-        self.laplacian_kernel.cuda()
-        self.loss = nn.MSELoss().cuda()
+        self.laplacian_kernel.cuda(0)
+        self.loss = nn.MSELoss().cuda(0)
     def forward(self, input, target):
         target = target.float()
         target_boundary = F.conv2d(target.unsqueeze(1), self.laplacian_kernel, padding=1).squeeze(1)
