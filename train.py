@@ -61,7 +61,7 @@ parser.add_argument('--train_info', default='fine_450.json', type=str,
 
 parser.add_argument('--valid_images', default='../stanford/s2d3ds_plane_anno/pre/images_val', type=str,
                     help='valid images folder')
-parser.add_argument('--valid_info', default='fine_100.json', type=str,
+parser.add_argument('--valid_info', default='fine_450.json', type=str,
                     help='valid annotation file')
 
 
@@ -81,7 +81,7 @@ parser.add_argument('--gamma', default=None, type=float,
 # You might not need customize these
 parser.add_argument('--num_workers', default=2, type=int,
                     help='Number of workers used in dataloading')
-parser.add_argument('--save_interval', default=5000, type=int,
+parser.add_argument('--save_interval', default=10000, type=int,
                     help='The number of iterations between saving the model.')
 parser.add_argument('--keep_latest', dest='keep_latest', action='store_true',
                     help='Only keep the latest checkpoint instead of each one.')
