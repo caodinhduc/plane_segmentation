@@ -59,7 +59,7 @@ parser.add_argument('--train_images', default='../stanford/s2d3ds_plane_anno/pre
 parser.add_argument('--train_info', default='fine_450.json', type=str,
                     help='train annotation file')
 
-parser.add_argument('--valid_images', default='../stanford/s2d3ds_plane_anno/pre/images_val', type=str,
+parser.add_argument('--valid_images', default='../stanford/s2d3ds_plane_anno/pre/images', type=str,
                     help='valid images folder')
 parser.add_argument('--valid_info', default='fine_450.json', type=str,
                     help='valid annotation file')
@@ -299,7 +299,8 @@ def train():
     epoch_size = len(dataset) // args.batch_size
     num_epochs = math.ceil(cfg.max_iter / epoch_size)
     step_index = 0
-
+    print('epoch size: ', epoch_size)
+    print('num epoch: ', num_epochs)
     # If Pytorch >= 1.9, please set the generator to utilize cuda to avoid crush.
     data_loader = torch.utils.data.DataLoader(dataset, args.batch_size,
                                   num_workers=args.num_workers,
@@ -318,6 +319,7 @@ def train():
     # try-except so you can use ctrl+c to save early and stop training
     try:
         for epoch in range(num_epochs):
+            print('training with epoch: ', epoch)
             # Resume from start_iter
             if (epoch+1)*epoch_size < iteration:
                 continue
