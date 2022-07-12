@@ -56,12 +56,12 @@ parser.add_argument('--reproductablity', dest='reproductablity', action='store_t
 # Set path for training
 parser.add_argument('--train_images', default='../stanford/s2d3ds_plane_anno/pre/images', type=str,
                     help='train images folder')
-parser.add_argument('--train_info', default='fine_450.json', type=str,
+parser.add_argument('--train_info', default='../stanford/s2d3ds_plane_anno/pre/s2d3ds_train.json', type=str,
                     help='train annotation file')
 
-parser.add_argument('--valid_images', default='../stanford/s2d3ds_plane_anno/pre/images', type=str,
+parser.add_argument('--valid_images', default='../stanford/s2d3ds_plane_anno/pre/images_val', type=str,
                     help='valid images folder')
-parser.add_argument('--valid_info', default='fine_450.json', type=str,
+parser.add_argument('--valid_info', default='fine_350.json', type=str,
                     help='valid annotation file')
 
 
@@ -328,7 +328,7 @@ def train():
                 # Stop if we've reached an epoch if we're resuming from start_iter
                 if iteration == (epoch+1)*epoch_size:
                     break
-
+                print('.')
                 # Stop at the configured number of iterations even if mid-epoch
                 if iteration == cfg.max_iter:
                     break
@@ -343,7 +343,7 @@ def train():
                         # Reset the loss averages because things might have changed
                         for avg in loss_avgs:
                             avg.reset()
-                
+                print('..')
                 # If a config setting was changed, remove it from the list so we don't keep checking
                 if changed:
                     cfg.delayed_settings = [x for x in cfg.delayed_settings if x[0] > iteration]
@@ -351,12 +351,13 @@ def train():
                 # Warm up by linearly interpolating the learning rate from some smaller value
                 if cfg.lr_warmup_until > 0 and iteration <= cfg.lr_warmup_until:
                     set_lr(optimizer, (args.lr - cfg.lr_warmup_init) * (iteration / cfg.lr_warmup_until) + cfg.lr_warmup_init)
+                print('...')
 
                 # Adjust the learning rate at the given iterations, but also if we resume from past that iteration
                 while step_index < len(cfg.lr_steps) and iteration >= cfg.lr_steps[step_index]:
                     step_index += 1
                     set_lr(optimizer, args.lr * (args.gamma ** step_index))
-                
+                print('....')
                 # Zero the grad to get ready to compute gradients
                 optimizer.zero_grad()
 
