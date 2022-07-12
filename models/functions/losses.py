@@ -118,17 +118,17 @@ class PlaneRecNetLoss(nn.Module):
         losses['ins'] = loss_ins
 
 
-        # Edge-laplacian Consistency loss
-        loss_edge = []
-        for input, target in zip(ins_pred_list, ins_labels):
-            if input is None:
-                continue
-            input = torch.sigmoid(input)
-            loss_edge.append(self.edge_loss(input, target))
-        # loss_edge_mean = torch.cat(loss_edge).mean()
-        loss_edge_mean = torch.FloatTensor(loss_edge).mean()
-        loss_edge_mean = loss_edge_mean * 2
-        losses['edge'] = loss_edge_mean 
+        # # Edge-laplacian Consistency loss
+        # loss_edge = []
+        # for input, target in zip(ins_pred_list, ins_labels):
+        #     if input is None:
+        #         continue
+        #     input = torch.sigmoid(input)
+        #     loss_edge.append(self.edge_loss(input, target))
+        # # loss_edge_mean = torch.cat(loss_edge).mean()
+        # loss_edge_mean = torch.FloatTensor(loss_edge).mean()
+        # loss_edge_mean = loss_edge_mean * 2
+        # losses['edge'] = loss_edge_mean 
 
         # Classification Loss
         cate_labels = [
