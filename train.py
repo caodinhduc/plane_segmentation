@@ -81,7 +81,7 @@ parser.add_argument('--gamma', default=None, type=float,
 # You might not need customize these
 parser.add_argument('--num_workers', default=2, type=int,
                     help='Number of workers used in dataloading')
-parser.add_argument('--save_interval', default=10000, type=int,
+parser.add_argument('--save_interval', default=1000, type=int,
                     help='The number of iterations between saving the model.')
 parser.add_argument('--keep_latest', dest='keep_latest', action='store_true',
                     help='Only keep the latest checkpoint instead of each one.')
@@ -328,7 +328,6 @@ def train():
                 # Stop if we've reached an epoch if we're resuming from start_iter
                 if iteration == (epoch+1)*epoch_size:
                     break
-                print('.')
                 # Stop at the configured number of iterations even if mid-epoch
                 if iteration == cfg.max_iter:
                     break
@@ -343,7 +342,6 @@ def train():
                         # Reset the loss averages because things might have changed
                         for avg in loss_avgs:
                             avg.reset()
-                print('..')
                 # If a config setting was changed, remove it from the list so we don't keep checking
                 if changed:
                     cfg.delayed_settings = [x for x in cfg.delayed_settings if x[0] > iteration]
@@ -351,13 +349,11 @@ def train():
                 # Warm up by linearly interpolating the learning rate from some smaller value
                 if cfg.lr_warmup_until > 0 and iteration <= cfg.lr_warmup_until:
                     set_lr(optimizer, (args.lr - cfg.lr_warmup_init) * (iteration / cfg.lr_warmup_until) + cfg.lr_warmup_init)
-                print('...')
 
                 # Adjust the learning rate at the given iterations, but also if we resume from past that iteration
                 while step_index < len(cfg.lr_steps) and iteration >= cfg.lr_steps[step_index]:
                     step_index += 1
                     set_lr(optimizer, args.lr * (args.gamma ** step_index))
-                print('....')
                 # Zero the grad to get ready to compute gradients
                 optimizer.zero_grad()
 
